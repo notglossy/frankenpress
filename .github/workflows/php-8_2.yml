@@ -1,4 +1,4 @@
-name: FrankenPress PHP 8.3
+name: FrankenPress PHP 8.2
 
 # This workflow uses actions that are not certified by GitHub.
 # They are provided by a third-party and are governed by
@@ -16,7 +16,7 @@ on:
 
 jobs:
   docker:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
      
@@ -38,9 +38,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           context: .
-          tags: notglossy/frankenpress:php-8.3
+          tags: notglossy/frankenpress:php-8.2
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            PHP_VERSION=8.3
+            PHP_VERSION=8.2
           
