@@ -4,7 +4,7 @@ A WordPress image built for simplicity and scale.
 
 ## Getting Started
 
-- [Docker Images](https://hub.docker.com/r/wpeverywhere/frankenwp "Docker Hub")
+- [Docker Images](https://hub.docker.com/r/notglossy/frankenpress "Docker Hub")
 
 ## Whats Included
 
