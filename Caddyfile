@@ -11,8 +11,6 @@
 	# https://caddyserver.com/docs/caddyfile/directives#sorting-algorithm
 	order php_server before file_server
 	order php before file_server
-	order wp_cache before rewrite
-	order request_header before wp_cache
 }
 
 {$CADDY_EXTRA_CONFIG}
@@ -28,16 +26,6 @@
 
 	root * /var/www/html/
 	encode br zstd gzip
-	
-	wp_cache {
-		loc {$CACHE_LOC:/var/www/html/wp-content/cache}
-		cache_response_codes {$CACHE_RESPONSE_CODES:2XX,404,405}
-		ttl {$TTL:6000}
-		purge_path {$PURGE_PATH:/__cache/purge}
-		purge_key {$PURGE_KEY}
-		bypass_home {$BYPASS_HOME:false}
-		bypass_path_prefixes {$BYPASS_PATH_PREFIXES:/wp-admin,/wp-json}
-	}
 
 	{$CADDY_SERVER_EXTRA_DIRECTIVES}
 

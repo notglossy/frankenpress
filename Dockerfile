@@ -1,47 +1,49 @@
+# Define build arguments that can be overridden at build time
 ARG WORDPRESS_VERSION=latest
 ARG PHP_VERSION=8.3
-ARG USER=www-data
 
+# First stage: builder - used to build FrankenPHP with custom modules
+FROM dunglas/frankenphp:1.5-builder-php${PHP_VERSION}-bookworm AS builder
 
-
-FROM dunglas/frankenphp:latest-builder-php${PHP_VERSION} as builder
-
-# Copy xcaddy in the builder image
+# Copy xcaddy tool from the official Caddy builder image
 COPY --from=caddy:builder /usr/bin/xcaddy /usr/bin/xcaddy
 
-
-# CGO must be enabled to build FrankenPHP
+# Set environment variables required for building FrankenPHP
+# CGO must be enabled for C bindings, and set build flags for optimization
 ENV CGO_ENABLED=1 XCADDY_SETCAP=1 XCADDY_GO_BUILD_FLAGS='-ldflags="-w -s" -trimpath'
 
-COPY ./sidekick/middleware/cache ./cache
-
+# Build FrankenPHP with xcaddy, including necessary modules
+# --with allows adding external modules to the build
 RUN xcaddy build \
     --output /usr/local/bin/frankenphp \
     --with github.com/dunglas/frankenphp=./ \
     --with github.com/dunglas/frankenphp/caddy=./caddy/ \
-    --with github.com/dunglas/caddy-cbrotli \
+    --with github.com/dunglas/caddy-cbrotli
     # Add extra Caddy modules here
-    --with github.com/stephenmiracle/frankenwp/sidekick/middleware/cache=./cache
 
+# Second stage: get WordPress files from the official WordPress image
+FROM wordpress:$WORDPRESS_VERSION AS wp
 
-FROM wordpress:$WORDPRESS_VERSION as wp
-FROM dunglas/frankenphp:latest-php${PHP_VERSION} AS base
+# Third stage: final image based on FrankenPHP
+FROM dunglas/frankenphp:1.5-php${PHP_VERSION}-bookworm AS base
 
-LABEL org.opencontainers.image.title=FrankenWP
+# Add metadata labels to the image
+LABEL org.opencontainers.image.title=FrankenPress
 LABEL org.opencontainers.image.description="Optimized WordPress containers to run everywhere. Built with FrankenPHP & Caddy."
-LABEL org.opencontainers.image.url=https://wpeverywhere.com
-LABEL org.opencontainers.image.source=https://github.com/StephenMiracle/frankenwp
+LABEL org.opencontainers.image.source=https://github.com/notglossy/frankenpress
 LABEL org.opencontainers.image.licenses=MIT
-LABEL org.opencontainers.image.vendor="Stephen Miracle"
+LABEL org.opencontainers.image.vendor="Not Glossy"
 
 
-# Replace the official binary by the one contained your custom modules
+# Copy the custom-built FrankenPHP binary from the builder stage
 COPY --from=builder /usr/local/bin/frankenphp /usr/local/bin/frankenphp
-ENV WP_DEBUG=${DEBUG:+1}
+
+# Set environment variables
 ENV FORCE_HTTPS=0
 ENV PHP_INI_SCAN_DIR=$PHP_INI_DIR/conf.d
 
-
+# Install required system packages
+# These packages are needed for PHP extensions and WordPress functionality
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     ghostscript \
@@ -60,7 +62,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev
 
 
-# install the PHP extensions we need (https://make.wordpress.org/hosting/handbook/handbook/server-environment/#php-extensions)
+# Install PHP extensions required by WordPress
+# Using the install-php-extensions script from the base image
+# You can find more at https://pecl.php.net
 RUN install-php-extensions \
     bcmath \
     exif \
@@ -70,18 +74,26 @@ RUN install-php-extensions \
     zip \
     # See https://github.com/Imagick/imagick/issues/640#issuecomment-2077206945
     imagick/imagick@master \
-    opcache
+    opcache \
+    memcache \
+    memcached \
+    apcu \
+    redis \
+    igbinary \
+    msgpack
 
-
+# Copy production PHP.ini and add WordPress-specific settings
 RUN cp $PHP_INI_DIR/php.ini-production $PHP_INI_DIR/php.ini
 COPY php.ini $PHP_INI_DIR/conf.d/wp.ini
 
+# Copy WordPress files and configuration from the WordPress image
 COPY --from=wp /usr/src/wordpress /usr/src/wordpress
 COPY --from=wp /usr/local/etc/php/conf.d /usr/local/etc/php/conf.d/
 COPY --from=wp /usr/local/bin/docker-entrypoint.sh /usr/local/bin/
 
 
-# set recommended PHP.ini settings
+# Configure PHP OpCache for better performance
+# These settings are recommended for production WordPress sites
 # see https://secure.php.net/manual/en/opcache.installation.php
 RUN set -eux; \
     { \
@@ -90,7 +102,9 @@ RUN set -eux; \
     echo 'opcache.max_accelerated_files=4000'; \
     echo 'opcache.revalidate_freq=2'; \
     } > $PHP_INI_DIR/conf.d/opcache-recommended.ini
-# https://wordpress.org/support/article/editing-wp-config-php/#configure-error-logging
+
+# Configure PHP error logging
+# These settings follow WordPress recommendations
 RUN { \
     # https://www.php.net/manual/en/errorfunc.constants.php
     # https://github.com/docker-library/wordpress/issues/420#issuecomment-517839670
@@ -105,46 +119,59 @@ RUN { \
     echo 'html_errors = Off'; \
     } > $PHP_INI_DIR/conf.d/error-logging.ini
 
+# Define a volume for WordPress files
+VOLUME /var/www/html
 
+# Set the working directory
 WORKDIR /var/www/html
 
-VOLUME /var/www/html/wp-content
-
-
-COPY wp-content/mu-plugins /var/www/html/wp-content/mu-plugins
-RUN mkdir /var/www/html/wp-content/cache
-
-
-
+# Modify the WordPress Docker entrypoint script to work with FrankenPHP
 RUN sed -i \
     -e 's/\[ "$1" = '\''php-fpm'\'' \]/\[\[ "$1" == frankenphp* \]\]/g' \
     -e 's/php-fpm/frankenphp/g' \
     /usr/local/bin/docker-entrypoint.sh
 
-
-
-# Add $_SERVER['ssl'] = true; when env USE_SSL = true is set to the wp-config.php file here: /usr/local/bin/wp-config-docker.php
+# Configure WordPress to support SSL and modify other WordPress settings
 RUN sed -i 's/<?php/<?php if (!!getenv("FORCE_HTTPS")) { \$_SERVER["HTTPS"] = "on"; } define( "FS_METHOD", "direct" ); set_time_limit(300); /g' /usr/src/wordpress/wp-config-docker.php
 
-# Adding WordPress CLI
+# WordPress CLI installation (great for terminal access)
 RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && \
     chmod +x wp-cli.phar && \
     mv wp-cli.phar /usr/local/bin/wp
 
+# Copy Caddy server configuration
 COPY Caddyfile /etc/caddy/Caddyfile
 
-# Caddy requires an additional capability to bind to port 80 and 443
-RUN useradd -D ${USER} && \
-    setcap CAP_NET_BIND_SERVICE=+eip /usr/local/bin/frankenphp
+# Define the user that will run the container
+# Default to www-data which is the standard web server user
+#
+# NOTE: On AWS, you may need to change this to root or modity the entrypoint script
+# to chown volume mounts to this user as mounts are owned by root by default.
+ARG USER_NAME=www-data
 
-# Caddy requires write access to /data/caddy and /config/caddy
-RUN chown -R ${USER}:${USER} /data/caddy && \
-    chown -R ${USER}:${USER} /config/caddy && \
-    chown -R ${USER}:${USER} /var/www/html && \
-    chown -R ${USER}:${USER} /usr/src/wordpress && \
-    chown -R ${USER}:${USER} /usr/local/bin/docker-entrypoint.sh
+# Check if the user already exists, if not create it
+# This prevents errors if we're using a different username
+RUN if id "${USER_NAME}" &>/dev/null; then \
+    echo "User ${USER_NAME} already exists"; \
+else \
+    useradd -m ${USER_NAME}; \
+fi
 
-USER $USER
+# Set capabilities for FrankenPHP to bind to privileged ports (80/443)
+# This is necessary to run as a non-root user
+RUN setcap CAP_NET_BIND_SERVICE=+eip /usr/local/bin/frankenphp
 
+# Create required directories and set proper ownership
+# This ensures the web server can write to these locations
+RUN chown -R ${USER_NAME}:${USER_NAME} /data/caddy && \
+    chown -R ${USER_NAME}:${USER_NAME} /config/caddy && \
+    chown -R ${USER_NAME}:${USER_NAME} /var/www/html && \
+    chown -R ${USER_NAME}:${USER_NAME} /usr/src/wordpress && \
+    chown -R ${USER_NAME}:${USER_NAME} /usr/local/bin/docker-entrypoint.sh
+
+# Switch to non-root user for better security
+USER $USER_NAME
+
+# Define the entrypoint and default command
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["frankenphp", "run", "--config", "/etc/caddy/Caddyfile"]

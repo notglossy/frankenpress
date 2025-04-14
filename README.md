@@ -1,18 +1,10 @@
-# WordPress + FrankenPHP Docker Image
+# FrankenPress Docker Image
 
-An enterprise-grade WordPress image built for scale. It uses the new FrankenPHP server bundled with Caddy. Lightning-fast server side caching Caddy module.
+A WordPress image built for simplicity and scale.
 
 ## Getting Started
 
 - [Docker Images](https://hub.docker.com/r/wpeverywhere/frankenwp "Docker Hub")
-- [Slack](https://join.slack.com/t/wpeverywhere/shared_invite/zt-2k88x3jtv-dpJHRYJ2IDT9PNQpO96zxQ "Slack")
-- [Website](https://wpeverywhere.com)
-
-### Examples
-
-- [Standard environment with MariaDB & Docker Compose](./examples/basic/compose.yaml)
-- [Debug with XDebug & Docker Compose](./examples/debug/compose.yaml)
-- [SQLite with Docker Compose](./examples/sqlite/compose.yaml)
 
 ## Whats Included
 
@@ -25,7 +17,10 @@ An enterprise-grade WordPress image built for scale. It uses the new FrankenPHP 
 ### Caching
 
 - opcache
-- Internal server sidekick
+- APCu
+- Memcache Extension
+- Memcached Extension
+- Redis Extension
 
 ### Environment Variables
 
@@ -34,16 +29,6 @@ An enterprise-grade WordPress image built for scale. It uses the new FrankenPHP 
 - `SERVER_NAME`: change the addresses on which to listen, the provided hostnames will also be used for the generated TLS certificate
 - `CADDY_GLOBAL_OPTIONS`: inject global options (debug most common)
 - `FRANKENPHP_CONFIG`: inject config under the frankenphp directive
-
-#### Sidekick Cache
-
-- `CACHE_LOC`: Where to store cache. Defaults to /var/www/html/wp-content/cache
-- `CACHE_RESPONSE_CODES`: Which status codes to cache. Defaults to 200,404,405
-- `BYPASS_PATH_PREFIX`: Which path prefixes to not cache. Defaults to /wp-admin,/wp-json
-- `BYPASS_HOME`: Whether to skip caching home. Defaults to false.
-- `PURGE_KEY`: Create a purge key that must be validated on purge requests. Helps to prevent malicious intent. No default.
-- `PURGE_PATH`: Create a custom route for the cache purge API path. Defaults to /\_\_cache/purge.
-- `TTL`: Defines how long objects should be stored in cache. Defaults to 6000.
 
 #### Wordpress
 
@@ -72,9 +57,6 @@ FrankenPHP is built on Caddy, a modern web server built in Go. It is secure & pe
 
 It is good practice to avoid using root users in your Docker images for security purposes. If a questionable individual gets access into your running Docker container with root account then they could have access to the cluster and all the resources it manages. This could be problematic. On the other hand, by creating a user specific to the Docker image, narrows the threat to only the image itself. It is also important to note that the base WordPress images also create non-root users by default.
 
-### What are the Changes from Base FrankenPHP?
-
-This custom Caddy build also includes an internal project named sidekick. It provides lightning fast cache that can be distributed among many containers. The default cache uses the local wp-content/cache directory but can use many cache services.
 
 ### How to use when behind load balancer or proxy?
 
@@ -84,7 +66,3 @@ Working in cloud environments like AWS can be tricky because your traffic is goi
 
 What about SSL cert? Use `SERVER_NAME=mydomain.com, :80`
 Caddy, the underlying application server is flexible enough for multiple entries. Separate multiple values with a comma. It will still request certificate.
-
-## Using in Real Projects? Join the Chat
-
-You can join our Slack chat to ask questions or connect directly. [Connect on Slack](https://join.slack.com/t/wpeverywhere/shared_invite/zt-2k88x3jtv-dpJHRYJ2IDT9PNQpO96zxQ)
