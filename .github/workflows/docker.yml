@@ -7,16 +7,60 @@ on:
 
 jobs:
   docker:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
-        php-version: ["8.2", "8.3", "8.4"]
-        platform: ["linux/amd64", "linux/arm64", "linux/arm/v7"]
+        include:
+          # AMD64 builds run on x64 runners
+          - php-version: "8.2"
+            platform: "linux/amd64"
+            runner: "ubuntu-latest"
+            suffix: "amd64"
+          - php-version: "8.3"
+            platform: "linux/amd64"
+            runner: "ubuntu-latest"
+            suffix: "amd64"
+          - php-version: "8.4"
+            platform: "linux/amd64"
+            runner: "ubuntu-latest" 
+            suffix: "amd64"
+          
+          # ARM64 builds run on ARM64 runners
+          - php-version: "8.2"
+            platform: "linux/arm64"
+            runner: "ubuntu-arm64-latest"
+            suffix: "arm64"
+          - php-version: "8.3"
+            platform: "linux/arm64"
+            runner: "ubuntu-arm64-latest"
+            suffix: "arm64"
+          - php-version: "8.4"
+            platform: "linux/arm64"
+            runner: "ubuntu-arm64-latest"
+            suffix: "arm64"
+          
+          # ARMv7 builds run on ARM64 runners with emulation
+          # (GitHub doesn't provide native ARMv7 runners)
+          - php-version: "8.2"
+            platform: "linux/arm/v7"
+            runner: "ubuntu-arm64-latest"
+            suffix: "armv7"
+          - php-version: "8.3"
+            platform: "linux/arm/v7"
+            runner: "ubuntu-arm64-latest"
+            suffix: "armv7"
+          - php-version: "8.4"
+            platform: "linux/arm/v7"
+            runner: "ubuntu-arm64-latest"
+            suffix: "armv7"
+    
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
      
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
+        # Only needed for ARMv7 builds on ARM64 runners
+        if: matrix.platform == 'linux/arm/v7'
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -33,17 +77,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract platform suffix
-        id: platform-suffix
-        run: |
-          if [[ "${{ matrix.platform }}" == "linux/amd64" ]]; then
-            echo "suffix=amd64" >> $GITHUB_OUTPUT
-          elif [[ "${{ matrix.platform }}" == "linux/arm64" ]]; then
-            echo "suffix=arm64" >> $GITHUB_OUTPUT
-          elif [[ "${{ matrix.platform }}" == "linux/arm/v7" ]]; then
-            echo "suffix=armv7" >> $GITHUB_OUTPUT
-          fi
 
       - name: Docker meta
         id: meta
@@ -62,15 +95,15 @@ jobs:
           push: true
           context: .
           tags: |
-            notglossy/frankenpress:php-${{ matrix.php-version }}-${{ steps.platform-suffix.outputs.suffix }}
-            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-${{ steps.platform-suffix.outputs.suffix }}
+            notglossy/frankenpress:php-${{ matrix.php-version }}-${{ matrix.suffix }}
+            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-${{ matrix.suffix }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  # Optional: Create multi-arch manifests after individual builds complete
+  # Create multi-arch manifests after individual builds complete
   create-manifests:
     needs: docker
     runs-on: ubuntu-latest
