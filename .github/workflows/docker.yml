@@ -105,8 +105,7 @@ jobs:
 
   # Create multi-arch manifests after individual builds complete
   create-manifests:
-    needs: [docker-self-hosted, docker-github-hosted]
-    if: always() # Run even if some jobs failed, as long as we have all architectures
+    needs: docker
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -125,134 +124,27 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Inspect the existing images to verify they're not already manifest lists
-      - name: Inspect Docker Hub images
-        id: inspect-dockerhub
+      - name: Install Docker Manifest Command (if needed)
         run: |
-          IMAGES_OK=true
-          
-          # Check each architecture image
-          for ARCH in amd64 arm64 armv7; do
-            echo "Inspecting notglossy/frankenpress:php-${{ matrix.php-version }}-${ARCH}"
-            if ! docker buildx imagetools inspect notglossy/frankenpress:php-${{ matrix.php-version }}-${ARCH} &>/dev/null; then
-              echo "::warning::Image notglossy/frankenpress:php-${{ matrix.php-version }}-${ARCH} does not exist"
-              IMAGES_OK=false
-            else
-              # Check if it's already a manifest list
-              if docker buildx imagetools inspect notglossy/frankenpress:php-${{ matrix.php-version }}-${ARCH} | grep -q "Manifest List"; then
-                echo "::warning::Image notglossy/frankenpress:php-${{ matrix.php-version }}-${ARCH} is already a manifest list"
-                IMAGES_OK=false
-              fi
-            fi
-          done
-          
-          echo "IMAGES_OK=${IMAGES_OK}" >> $GITHUB_ENV
+          docker version
+          DOCKER_CLI_EXPERIMENTAL=enabled
 
-      # Create the manifest with --amend flag to handle possible existing manifests
       - name: Create and push Docker Hub manifest
-        if: env.IMAGES_OK == 'true'
+        env:
+          DOCKER_CLI_EXPERIMENTAL: enabled
         run: |
-          # First try to inspect if a manifest already exists
-          if docker buildx imagetools inspect notglossy/frankenpress:php-${{ matrix.php-version }} &>/dev/null; then
-            echo "Manifest already exists, removing it first"
-            # Unfortunately, there's no direct way to delete a manifest in Docker CLI
-            # We'll create a dummy manifest to replace it
-            docker manifest create notglossy/frankenpress:php-${{ matrix.php-version }} \
-              --amend notglossy/frankenpress:php-${{ matrix.php-version }}-amd64
-            docker manifest push notglossy/frankenpress:php-${{ matrix.php-version }}
-          fi
-          
-          # Now create the proper manifest
           docker manifest create notglossy/frankenpress:php-${{ matrix.php-version }} \
             --amend notglossy/frankenpress:php-${{ matrix.php-version }}-amd64 \
             --amend notglossy/frankenpress:php-${{ matrix.php-version }}-arm64 \
             --amend notglossy/frankenpress:php-${{ matrix.php-version }}-armv7
-          
-          # Add specific platform annotations to ensure correct architecture targeting
-          docker manifest annotate notglossy/frankenpress:php-${{ matrix.php-version }} \
-            notglossy/frankenpress:php-${{ matrix.php-version }}-amd64 --os linux --arch amd64
-          docker manifest annotate notglossy/frankenpress:php-${{ matrix.php-version }} \
-            notglossy/frankenpress:php-${{ matrix.php-version }}-arm64 --os linux --arch arm64
-          docker manifest annotate notglossy/frankenpress:php-${{ matrix.php-version }} \
-            notglossy/frankenpress:php-${{ matrix.php-version }}-armv7 --os linux --arch arm --variant v7
-            
-          docker manifest push --purge notglossy/frankenpress:php-${{ matrix.php-version }}
+          docker manifest push notglossy/frankenpress:php-${{ matrix.php-version }}
 
       - name: Create and push GitHub Container Registry manifest
-        if: env.IMAGES_OK == 'true'
+        env:
+          DOCKER_CLI_EXPERIMENTAL: enabled
         run: |
-          # Check if manifest already exists
-          if docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }} &>/dev/null; then
-            echo "Manifest already exists, removing it first"
-            # Create a temporary manifest to replace the existing one
-            docker manifest create ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }} \
-              --amend ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-amd64
-            docker manifest push ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}
-          fi
-          
-          # Now create the proper manifest
           docker manifest create ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }} \
             --amend ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-amd64 \
             --amend ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-arm64 \
             --amend ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-armv7
-          
-          # Add specific platform annotations
-          docker manifest annotate ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }} \
-            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-amd64 --os linux --arch amd64
-          docker manifest annotate ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }} \
-            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-arm64 --os linux --arch arm64
-          docker manifest annotate ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }} \
-            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-armv7 --os linux --arch arm --variant v7
-            
-          docker manifest push --purge ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}
-
-      # Create latest tag with all PHP versions
-      - name: Create and push latest manifest 
-        if: matrix.php-version == '8.4' && env.IMAGES_OK == 'true'
-        run: |
-          # Check if manifest already exists
-          if docker buildx imagetools inspect notglossy/frankenpress:latest &>/dev/null; then
-            echo "Latest manifest already exists, removing it first"
-            docker manifest create notglossy/frankenpress:latest \
-              --amend notglossy/frankenpress:php-8.4-amd64
-            docker manifest push notglossy/frankenpress:latest
-          fi
-          
-          # Create latest tag pointing to latest PHP version (8.4)
-          docker manifest create notglossy/frankenpress:latest \
-            --amend notglossy/frankenpress:php-8.4-amd64 \
-            --amend notglossy/frankenpress:php-8.4-arm64 \
-            --amend notglossy/frankenpress:php-8.4-armv7
-          
-          # Add specific platform annotations
-          docker manifest annotate notglossy/frankenpress:latest \
-            notglossy/frankenpress:php-8.4-amd64 --os linux --arch amd64
-          docker manifest annotate notglossy/frankenpress:latest \
-            notglossy/frankenpress:php-8.4-arm64 --os linux --arch arm64
-          docker manifest annotate notglossy/frankenpress:latest \
-            notglossy/frankenpress:php-8.4-armv7 --os linux --arch arm --variant v7
-            
-          docker manifest push --purge notglossy/frankenpress:latest
-          
-          # Same for GitHub Container Registry
-          if docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/frankenpress:latest &>/dev/null; then
-            echo "Latest GHCR manifest already exists, removing it first"
-            docker manifest create ghcr.io/${{ github.repository_owner }}/frankenpress:latest \
-              --amend ghcr.io/${{ github.repository_owner }}/frankenpress:php-8.4-amd64
-            docker manifest push ghcr.io/${{ github.repository_owner }}/frankenpress:latest
-          fi
-          
-          docker manifest create ghcr.io/${{ github.repository_owner }}/frankenpress:latest \
-            --amend ghcr.io/${{ github.repository_owner }}/frankenpress:php-8.4-amd64 \
-            --amend ghcr.io/${{ github.repository_owner }}/frankenpress:php-8.4-arm64 \
-            --amend ghcr.io/${{ github.repository_owner }}/frankenpress:php-8.4-armv7
-          
-          # Add specific platform annotations
-          docker manifest annotate ghcr.io/${{ github.repository_owner }}/frankenpress:latest \
-            ghcr.io/${{ github.repository_owner }}/frankenpress:php-8.4-amd64 --os linux --arch amd64
-          docker manifest annotate ghcr.io/${{ github.repository_owner }}/frankenpress:latest \
-            ghcr.io/${{ github.repository_owner }}/frankenpress:php-8.4-arm64 --os linux --arch arm64
-          docker manifest annotate ghcr.io/${{ github.repository_owner }}/frankenpress:latest \
-            ghcr.io/${{ github.repository_owner }}/frankenpress:php-8.4-armv7 --os linux --arch arm --variant v7
-            
-          docker manifest push --purge ghcr.io/${{ github.repository_owner }}/frankenpress:latest
+          docker manifest push ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}
