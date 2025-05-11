@@ -9,10 +9,6 @@ on:
   schedule:
     - cron: "0 0 * * 0" # Every Sunday at midnight UTC
   workflow_dispatch:
-  #push:
-  #  branches: ["main"]
-    # Publish semver tags as releases.
-  #  tags: ["v*.*.*"]
 
 jobs:
   docker:
@@ -38,11 +34,24 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}    
-      
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: notglossy/frankenpress
+          tags: |
+            type=semver,pattern={{version}}
+            type=ref,event=branch
+          labels: |
+            org.opencontainers.image.title=FrankenPress
+            org.opencontainers.image.description=WordPress running on FrankenPHP - a high-performance PHP application server
+            org.opencontainers.image.licenses=MIT
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64,linux/arm64,linux/i386,linux/arm/v7
           push: true
           context: .
           tags: |
@@ -52,4 +61,5 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             PHP_VERSION=8.3
+          labels: ${{ steps.meta.outputs.labels }}
           
