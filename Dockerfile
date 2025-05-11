@@ -3,10 +3,10 @@ ARG WORDPRESS_VERSION=latest
 ARG PHP_VERSION=8.3
 
 # First stage: builder - used to build FrankenPHP with custom modules
-FROM dunglas/frankenphp:1.5-builder-php${PHP_VERSION}-bookworm AS builder
+FROM mirror.gcr.io/dunglas/frankenphp:1.5-builder-php${PHP_VERSION}-bookworm AS builder
 
 # Copy xcaddy tool from the official Caddy builder image
-COPY --from=caddy:builder /usr/bin/xcaddy /usr/bin/xcaddy
+COPY --from=mirror.gcr.io/caddy:builder /usr/bin/xcaddy /usr/bin/xcaddy
 
 # Set environment variables required for building FrankenPHP
 # CGO must be enabled for C bindings, and set build flags for optimization
@@ -22,10 +22,10 @@ RUN xcaddy build \
     # Add extra Caddy modules here
 
 # Second stage: get WordPress files from the official WordPress image
-FROM wordpress:$WORDPRESS_VERSION AS wp
+FROM mirror.gcr.io/wordpress:$WORDPRESS_VERSION AS wp
 
 # Third stage: final image based on FrankenPHP
-FROM dunglas/frankenphp:1.5-php${PHP_VERSION}-bookworm AS base
+FROM mirror.gcr.io/dunglas/frankenphp:1.5-php${PHP_VERSION}-bookworm AS base
 
 # Add metadata labels to the image
 LABEL org.opencontainers.image.title=FrankenPress
