@@ -27,30 +27,30 @@ jobs:
           # ARM64 builds run on ARM64 runners
           - php-version: "8.2"
             platform: "linux/arm64"
-            runner: "ubuntu-arm64-latest"
+            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm"]
             suffix: "arm64"
           - php-version: "8.3"
             platform: "linux/arm64"
-            runner: "ubuntu-arm64-latest"
+            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm"]
             suffix: "arm64"
           - php-version: "8.4"
             platform: "linux/arm64"
-            runner: "ubuntu-arm64-latest"
+            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm"]
             suffix: "arm64"
           
           # ARMv7 builds run on ARM64 runners with emulation
           # (GitHub doesn't provide native ARMv7 runners)
           - php-version: "8.2"
             platform: "linux/arm/v7"
-            runner: "ubuntu-arm64-latest"
+            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm"]
             suffix: "armv7"
           - php-version: "8.3"
             platform: "linux/arm/v7"
-            runner: "ubuntu-arm64-latest"
+            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm"]
             suffix: "armv7"
           - php-version: "8.4"
             platform: "linux/arm/v7"
-            runner: "ubuntu-arm64-latest"
+            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm"]
             suffix: "armv7"
     
     runs-on: ${{ matrix.runner }}
