@@ -49,6 +49,9 @@ jobs:
             org.opencontainers.image.description=WordPress running on FrankenPHP - a high-performance PHP application server
             org.opencontainers.image.licenses=MIT
 
+      - name: Set up Docker SBOM
+        uses: anchore/sbom-action/download-syft@v0.15.1
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -63,3 +66,8 @@ jobs:
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          attestations: |
+            type=sbom
+            type=provenance
