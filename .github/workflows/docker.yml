@@ -13,44 +13,44 @@ jobs:
           # AMD64 builds run on x64 runners
           - php-version: "8.2"
             platform: "linux/amd64"
-            runner: "ubuntu-latest"
+            runner: ["ubuntu-latest", "notglossy-amd64"]
             suffix: "amd64"
           - php-version: "8.3"
             platform: "linux/amd64"
-            runner: "ubuntu-latest"
+            runner: ["ubuntu-latest", "notglossy-amd64"]
             suffix: "amd64"
           - php-version: "8.4"
             platform: "linux/amd64"
-            runner: "ubuntu-latest" 
+            runner: ["ubuntu-latest", "notglossy-amd64"]
             suffix: "amd64"
           
           # ARM64 builds run on ARM64 runners
           - php-version: "8.2"
             platform: "linux/arm64"
-            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm"]
+            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm", "notglossy-arm64"]
             suffix: "arm64"
           - php-version: "8.3"
             platform: "linux/arm64"
-            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm"]
+            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm", "notglossy-arm64"]
             suffix: "arm64"
           - php-version: "8.4"
             platform: "linux/arm64"
-            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm"]
+            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm", "notglossy-arm64"]
             suffix: "arm64"
           
           # ARMv7 builds run on ARM64 runners with emulation
           # (GitHub doesn't provide native ARMv7 runners)
           - php-version: "8.2"
             platform: "linux/arm/v7"
-            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm"]
+            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm", "notglossy-arm64"]
             suffix: "armv7"
           - php-version: "8.3"
             platform: "linux/arm/v7"
-            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm"]
+            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm", "notglossy-arm64"]
             suffix: "armv7"
           - php-version: "8.4"
             platform: "linux/arm/v7"
-            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm"]
+            runner: ["ubuntu-arm64-latest", "ubuntu-24.04-arm",  "ubuntu-22.04-arm", "notglossy-arm64"]
             suffix: "armv7"
     
     runs-on: ${{ matrix.runner }}
