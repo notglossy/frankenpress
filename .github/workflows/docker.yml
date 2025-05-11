@@ -88,20 +88,32 @@ jobs:
             org.opencontainers.image.description=WordPress running on FrankenPHP - a high-performance PHP application server
             org.opencontainers.image.licenses=MIT
 
-      - name: Build and push
+      # Key change: build the image but don't push it yet
+      - name: Build image
         uses: docker/build-push-action@v6
         with:
           platforms: ${{ matrix.platform }}
-          push: true
+          push: false  # Don't push yet
+          load: true   # Load into local Docker (only works for single platform)
           context: .
-          tags: |
-            notglossy/frankenpress:php-${{ matrix.php-version }}-${{ matrix.suffix }}
-            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-${{ matrix.suffix }}
+          tags: local-frankenpress:${{ matrix.php-version }}-${{ matrix.suffix }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # Push to Docker Hub with platform-specific tags
+      - name: Tag and push to Docker Hub
+        run: |
+          docker tag local-frankenpress:${{ matrix.php-version }}-${{ matrix.suffix }} notglossy/frankenpress:php-${{ matrix.php-version }}-${{ matrix.suffix }}
+          docker push notglossy/frankenpress:php-${{ matrix.php-version }}-${{ matrix.suffix }}
+
+      # Push to GitHub Container Registry with platform-specific tags
+      - name: Tag and push to GitHub Container Registry
+        run: |
+          docker tag local-frankenpress:${{ matrix.php-version }}-${{ matrix.suffix }} ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-${{ matrix.suffix }}
+          docker push ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-${{ matrix.suffix }}
 
   # Create multi-arch manifests after individual builds complete
   create-manifests:
@@ -124,27 +136,62 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Docker Manifest Command (if needed)
+      # Enable Docker CLI experimental features for manifest support
+      - name: Set Docker CLI experimental
         run: |
-          docker version
-          DOCKER_CLI_EXPERIMENTAL=enabled
+          mkdir -p ~/.docker
+          echo '{"experimental": "enabled"}' > ~/.docker/config.json
+          export DOCKER_CLI_EXPERIMENTAL=enabled
 
+      # Create and push Docker Hub manifest with explicit annotations
       - name: Create and push Docker Hub manifest
-        env:
-          DOCKER_CLI_EXPERIMENTAL: enabled
         run: |
+          # Pull all platform images first to ensure we have them locally
+          docker pull notglossy/frankenpress:php-${{ matrix.php-version }}-amd64
+          docker pull notglossy/frankenpress:php-${{ matrix.php-version }}-arm64
+          docker pull notglossy/frankenpress:php-${{ matrix.php-version }}-armv7
+          
+          # Inspect to verify they are single-platform images
+          docker inspect notglossy/frankenpress:php-${{ matrix.php-version }}-amd64
+          
+          # Create manifest with explicit platform annotations
           docker manifest create notglossy/frankenpress:php-${{ matrix.php-version }} \
             --amend notglossy/frankenpress:php-${{ matrix.php-version }}-amd64 \
             --amend notglossy/frankenpress:php-${{ matrix.php-version }}-arm64 \
             --amend notglossy/frankenpress:php-${{ matrix.php-version }}-armv7
+          
+          # Add platform-specific annotations
+          docker manifest annotate notglossy/frankenpress:php-${{ matrix.php-version }} \
+            notglossy/frankenpress:php-${{ matrix.php-version }}-amd64 --os linux --arch amd64
+          docker manifest annotate notglossy/frankenpress:php-${{ matrix.php-version }} \
+            notglossy/frankenpress:php-${{ matrix.php-version }}-arm64 --os linux --arch arm64
+          docker manifest annotate notglossy/frankenpress:php-${{ matrix.php-version }} \
+            notglossy/frankenpress:php-${{ matrix.php-version }}-armv7 --os linux --arch arm --variant v7
+          
+          # Push the manifest
           docker manifest push notglossy/frankenpress:php-${{ matrix.php-version }}
 
+      # Create and push GitHub Container Registry manifest with explicit annotations
       - name: Create and push GitHub Container Registry manifest
-        env:
-          DOCKER_CLI_EXPERIMENTAL: enabled
         run: |
+          # Pull all platform images first
+          docker pull ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-amd64
+          docker pull ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-arm64
+          docker pull ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-armv7
+          
+          # Create manifest with explicit platform annotations
           docker manifest create ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }} \
             --amend ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-amd64 \
             --amend ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-arm64 \
             --amend ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-armv7
+          
+          # Add platform-specific annotations
+          docker manifest annotate ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }} \
+            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-amd64 --os linux --arch amd64
+          docker manifest annotate ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }} \
+            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-arm64 --os linux --arch arm64
+          docker manifest annotate ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }} \
+            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-armv7 --os linux --arch arm --variant v7
+          
+          # Push the manifest
           docker manifest push ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}
