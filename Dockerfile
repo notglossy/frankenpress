@@ -118,6 +118,8 @@ RUN { \
     echo 'html_errors = Off'; \
     } > $PHP_INI_DIR/conf.d/error-logging.ini
 
+RUN echo 'expose_php = Off' > $PHP_INI_DIR/conf.d/expose_php.ini
+
 # Define a volume for WordPress files
 VOLUME /var/www/html
 
@@ -170,6 +172,8 @@ RUN chown -R ${USER_NAME}:${USER_NAME} /data/caddy && \
 
 # Switch to non-root user for better security
 USER $USER_NAME
+
+ENV PAGER=more
 
 # Define the entrypoint and default command
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
