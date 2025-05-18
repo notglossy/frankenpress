@@ -171,6 +171,8 @@ RUN chown -R ${USER_NAME}:${USER_NAME} /data/caddy && \
 # Switch to non-root user for better security
 USER $USER_NAME
 
+ENV PAGER=more
+
 # Define the entrypoint and default command
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["frankenphp", "run", "--config", "/etc/caddy/Caddyfile"]
