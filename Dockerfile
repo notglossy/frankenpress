@@ -118,6 +118,8 @@ RUN { \
     echo 'html_errors = Off'; \
     } > $PHP_INI_DIR/conf.d/error-logging.ini
 
+RUN echo 'expose_php = Off' > $PHP_INI_DIR/conf.d/expose_php.ini
+
 # Define a volume for WordPress files
 VOLUME /var/www/html
 
