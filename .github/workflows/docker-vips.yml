@@ -61,9 +61,7 @@ jobs:
           file: ./Dockerfile.vips-ffi
           tags: |
             notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi
-            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-vips-ffi
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
           labels: ${{ steps.meta.outputs.labels }}
