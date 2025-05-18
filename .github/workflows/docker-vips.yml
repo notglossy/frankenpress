@@ -1,4 +1,4 @@
-name: Build Docker Images
+name: Build Docker VIPS Images
 
 # This workflow uses actions that are not certified by GitHub.
 # They are provided by a third-party and are governed by
@@ -7,7 +7,7 @@ name: Build Docker Images
 
 on:
   schedule:
-    - cron: "0 0 * * 0" # Every Sunday at midnight UTC
+    - cron: "0 6 * * 0" # Every Sunday at midnight UTC
   workflow_dispatch:
 
 jobs:
@@ -45,8 +45,8 @@ jobs:
         with:
           images: notglossy/frankenpress
           labels: |
-            org.opencontainers.image.title=FrankenPress (PHP ${{ matrix.php-version }})
-            org.opencontainers.image.description=WordPress running on FrankenPHP - a high-performance PHP application server
+            org.opencontainers.image.title=FrankenPress (VIPS/FFI PHP ${{ matrix.php-version }})
+            org.opencontainers.image.description=WordPress with VIPS and FFI running on FrankenPHP - a high-performance PHP application server
             org.opencontainers.image.licenses=MIT
 
       - name: Set up Docker SBOM
@@ -58,8 +58,9 @@ jobs:
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           context: .
+          file: ./Dockerfile.vips-ffi
           tags: |
-            notglossy/frankenpress:php-${{ matrix.php-version }}
+            notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi
             ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
