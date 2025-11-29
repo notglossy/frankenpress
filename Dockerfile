@@ -37,9 +37,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg-dev \
     libwebp-dev \
     libzip-dev \
-    libmemcached11t64 \
-    libmemcachedutil2t64 \
-    libmemcached-tools \
     zlib1g-dev
 
 
