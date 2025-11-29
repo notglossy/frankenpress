@@ -37,7 +37,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg-dev \
     libwebp-dev \
     libzip-dev \
-    zlib1g-dev
+    zlib1g-dev \
+    libmemcached-tools
 
 
 # Install PHP extensions required by WordPress
