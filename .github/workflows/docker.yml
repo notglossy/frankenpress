@@ -86,8 +86,8 @@ jobs:
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
           labels: ${{ steps.meta.outputs.labels }}
-          provenance: mode=max
-          sbom: true
+          provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
           load: ${{ github.event_name == 'pull_request' }}
 
       - name: Smoke test
