@@ -1,34 +1,14 @@
 # Define build arguments that can be overridden at build time
 ARG WORDPRESS_VERSION=latest
 ARG PHP_VERSION=8.3
+ARG FRANKENPHP_VERSION=1.10.1
+ARG DEBIAN_VERSION=trixie
 
-# First stage: builder - used to build FrankenPHP with custom modules
-FROM dunglas/frankenphp:1.5-builder-php${PHP_VERSION}-bookworm AS builder
-
-# Copy xcaddy tool from the official Caddy builder image
-COPY --from=caddy:builder /usr/bin/xcaddy /usr/bin/xcaddy
-
-# Set environment variables required for building FrankenPHP
-# CGO must be enabled for C bindings, and set build flags for optimization
-ENV CGO_ENABLED=1 XCADDY_SETCAP=1 XCADDY_GO_BUILD_FLAGS='-ldflags="-w -s" -trimpath'
-
-# Allow Go toolchain auto-upgrade to handle newer Go version requirements
-ENV GOTOOLCHAIN=auto
-
-# Build FrankenPHP with xcaddy, including necessary modules
-# --with allows adding external modules to the build
-RUN xcaddy build \
-    --output /usr/local/bin/frankenphp \
-    --with github.com/dunglas/frankenphp=./ \
-    --with github.com/dunglas/frankenphp/caddy=./caddy/ \
-    --with github.com/dunglas/caddy-cbrotli
-    # Add extra Caddy modules here
-
-# Second stage: get WordPress files from the official WordPress image
+# First stage: get WordPress files from the official WordPress image
 FROM wordpress:$WORDPRESS_VERSION AS wp
 
-# Third stage: final image based on FrankenPHP
-FROM dunglas/frankenphp:1.5-php${PHP_VERSION}-bookworm AS base
+# Second stage: final image based on FrankenPHP
+FROM dunglas/frankenphp:${FRANKENPHP_VERSION}-php${PHP_VERSION}-${DEBIAN_VERSION} AS base
 
 # Add metadata labels to the image
 LABEL org.opencontainers.image.title=FrankenPress
@@ -36,10 +16,6 @@ LABEL org.opencontainers.image.description="Optimized WordPress containers to ru
 LABEL org.opencontainers.image.source=https://github.com/notglossy/frankenpress
 LABEL org.opencontainers.image.licenses=MIT
 LABEL org.opencontainers.image.vendor="Not Glossy"
-
-
-# Copy the custom-built FrankenPHP binary from the builder stage
-COPY --from=builder /usr/local/bin/frankenphp /usr/local/bin/frankenphp
 
 # Set environment variables
 ENV FORCE_HTTPS=0
