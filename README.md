@@ -1,26 +1,90 @@
 # FrankenPress Docker Image
 
-A WordPress image built for simplicity and scale.
+A WordPress image built for simplicity and scale, powered by FrankenPHP and Caddy.
 
-## Getting Started
+## Quick Start
 
-- [Docker Images](https://hub.docker.com/r/notglossy/frankenpress "Docker Hub")
+```bash
+docker run -d \
+  -p 80:80 \
+  -e DB_HOST=your-db-host \
+  -e DB_USER=wordpress \
+  -e DB_PASSWORD=your-password \
+  -e DB_NAME=wordpress \
+  notglossy/frankenpress:latest
+```
 
-## Whats Included
+## Available Images
 
-### Services
+### Standard Images
+- `notglossy/frankenpress:latest` - Latest with Debian Trixie (amd64, arm64)
+- `notglossy/frankenpress:php-8.4-trixie` - PHP 8.4 on Debian Trixie (amd64, arm64)
+- `notglossy/frankenpress:php-8.4-bookworm` - PHP 8.4 on Debian Bookworm (amd64, arm64, arm/v7)
+- `notglossy/frankenpress:php-8.3-trixie` - PHP 8.3 on Debian Trixie (amd64, arm64)
+- `notglossy/frankenpress:php-8.3-bookworm` - PHP 8.3 on Debian Bookworm (amd64, arm64, arm/v7)
+- `notglossy/frankenpress:php-8.2-trixie` - PHP 8.2 on Debian Trixie (amd64, arm64)
+- `notglossy/frankenpress:php-8.2-bookworm` - PHP 8.2 on Debian Bookworm (amd64, arm64, arm/v7)
 
-- [WordPress](https://hub.docker.com/_/wordpress "WordPress Docker Image")
-- [FrankenPHP](https://hub.docker.com/r/dunglas/frankenphp "FrankenPHP Docker Image")
-- [Caddy](https://caddyserver.com/ "Caddy Server")
+### VIPS Images (with FFI support for advanced image processing)
+- `notglossy/frankenpress:vips-ffi` - Latest VIPS with Debian Trixie (amd64, arm64)
+- `notglossy/frankenpress:php-8.4-vips-ffi-trixie` - PHP 8.4 VIPS on Debian Trixie (amd64, arm64)
+- `notglossy/frankenpress:php-8.4-vips-ffi-bookworm` - PHP 8.4 VIPS on Debian Bookworm (amd64, arm64, arm/v7)
 
-### Caching
+**Note:** ARM v7 (32-bit) support is only available with Debian Bookworm due to package availability limitations in Trixie.
 
-- opcache
+## Choosing Between Trixie and Bookworm
+
+### Debian Trixie (Recommended)
+- **Latest stable Debian release**
+- Newer packages and features
+- Available for: `linux/amd64`, `linux/arm64`
+- Default for `:latest` tag
+
+### Debian Bookworm
+- **Previous stable Debian release**
+- More mature, wider package support
+- Available for: `linux/amd64`, `linux/arm64`, `linux/arm/v7`
+- **Required for 32-bit ARM (arm/v7)** devices like Raspberry Pi 2/3
+
+Use Bookworm if you need ARM v7 support or prefer a more established base. Otherwise, use Trixie for the latest packages.
+
+## Links
+
+- [Docker Hub](https://hub.docker.com/r/notglossy/frankenpress)
+- [GitHub Repository](https://github.com/notglossy/frankenpress)
+
+## What's Included
+
+### Core Components
+
+- **[WordPress](https://wordpress.org/)** - Latest version from official WordPress Docker images
+- **[FrankenPHP 1.10.1](https://frankenphp.dev/)** - Modern PHP application server
+- **[Caddy](https://caddyserver.com/)** - Fast, secure web server with automatic HTTPS
+- **PHP Extensions** - Optimized selection for WordPress performance
+
+### PHP Extensions & Caching
+
+**Performance & Caching:**
+- OPcache (configured for production)
 - APCu
-- Memcache Extension
-- Memcached Extension
-- Redis Extension
+- Memcache
+- Memcached
+- Redis
+- igbinary
+- msgpack
+
+**WordPress Essentials:**
+- bcmath
+- exif
+- gd
+- intl
+- mysqli
+- zip
+- imagick
+
+**VIPS Images Only:**
+- FFI (Foreign Function Interface)
+- libvips (high-performance image processing)
 
 ### Environment Variables
 
