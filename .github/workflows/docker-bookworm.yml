@@ -24,8 +24,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  docker-trixie:
-    name: Build Docker Images (Trixie - amd64/arm64)
+  docker:
+    name: Build Docker Images (Bookworm)
     runs-on: ubuntu-latest
     strategy:
       matrix:

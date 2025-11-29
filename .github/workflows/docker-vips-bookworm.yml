@@ -26,8 +26,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  docker-vips-trixie:
-    name: Build VIPS Images (Trixie - amd64/arm64)
+  docker:
+    name: Build VIPS Images (Bookworm)
     runs-on: ubuntu-latest
     strategy:
       matrix:
