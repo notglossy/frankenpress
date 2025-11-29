@@ -6,9 +6,27 @@ name: Build Docker Images
 # documentation.
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Dockerfile'
+      - 'Caddyfile'
+      - 'php.ini'
+      - '.github/workflows/docker.yml'
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'Caddyfile'
+      - 'php.ini'
+      - '.github/workflows/docker.yml'
   schedule:
     - cron: "0 0 * * 0" # Every Sunday at midnight UTC
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   docker:
@@ -56,11 +74,13 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           context: .
           tags: |
             notglossy/frankenpress:php-${{ matrix.php-version }}
             ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}
+            ${{ matrix.php-version == '8.4' && 'notglossy/frankenpress:latest' || '' }}
+            ${{ matrix.php-version == '8.4' && format('ghcr.io/{0}/frankenpress:latest', github.repository_owner) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
@@ -68,3 +88,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: mode=max
           sbom: true
+          load: ${{ github.event_name == 'pull_request' }}
+
+      - name: Smoke test
+        if: github.event_name == 'pull_request'
+        run: |
+          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }} php -v | grep "PHP ${{ matrix.php-version }}"
+          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }} frankenphp version
+          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }} wp --version
+          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }} ls -la /usr/src/wordpress | grep wp-config-docker.php
