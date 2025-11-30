@@ -28,7 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        php-version: [8.2, 8.3, 8.4]
+        # Only build PHP 8.4 for PRs to speed up CI, build all versions for main branch
+        php-version: ${{ github.event_name == 'pull_request' && fromJSON('[8.4]') || fromJSON('[8.2, 8.3, 8.4]') }}
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -78,7 +79,9 @@ jobs:
             ${{ matrix.php-version == '8.4' && 'notglossy/frankenpress:latest' || '' }}
             ${{ matrix.php-version == '8.4' && format('ghcr.io/{0}/frankenpress:trixie', github.repository_owner) || '' }}
             ${{ matrix.php-version == '8.4' && format('ghcr.io/{0}/frankenpress:latest', github.repository_owner) || '' }}
-          cache-from: type=gha
+          cache-from: |
+            type=gha
+            type=registry,ref=notglossy/frankenpress:php-${{ matrix.php-version }}-trixie
           cache-to: type=gha,mode=max
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
