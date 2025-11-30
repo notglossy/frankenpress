@@ -5,7 +5,7 @@ ARG FRANKENPHP_VERSION=1.10.1
 ARG DEBIAN_VERSION=trixie
 
 # First stage: get WordPress files from the official WordPress image
-FROM wordpress:$WORDPRESS_VERSION AS wp
+FROM public.ecr.aws/docker/library/wordpress:$WORDPRESS_VERSION AS wp
 
 # Second stage: final image based on FrankenPHP
 FROM dunglas/frankenphp:${FRANKENPHP_VERSION}-php${PHP_VERSION}-${DEBIAN_VERSION} AS base
