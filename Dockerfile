@@ -20,7 +20,6 @@
 # Example: docker build --build-arg PHP_VERSION=8.2 .
 ARG WORDPRESS_VERSION=latest
 ARG PHP_VERSION=8.3
-ARG FRANKENPHP_VERSION=1.10.1
 ARG DEBIAN_VERSION=trixie
 
 # -----------------------------------------------------------------------------
@@ -33,8 +32,9 @@ FROM public.ecr.aws/docker/library/wordpress:$WORDPRESS_VERSION AS wp
 # -----------------------------------------------------------------------------
 # Stage 2: Final FrankenPress Image
 # -----------------------------------------------------------------------------
-# Base image includes FrankenPHP server with specified PHP version and Debian
-FROM dunglas/frankenphp:${FRANKENPHP_VERSION}-php${PHP_VERSION}-${DEBIAN_VERSION} AS base
+# Base image uses custom FrankenPHP builds from ghcr.io/notglossy/frankenpress-src
+# Format: php{VERSION}-{DEBIAN_VERSION}-{ARCH}
+FROM ghcr.io/notglossy/frankenpress-src:php${PHP_VERSION}-${DEBIAN_VERSION} AS base
 
 # -----------------------------------------------------------------------------
 # Metadata Labels
@@ -70,6 +70,7 @@ ENV FORCE_HTTPS=0 \
 # - curl: HTTP client for WP-CLI and downloads
 # - unzip: Archive extraction
 # - git: Version control (useful for plugin/theme development)
+# - libcap2-bin: Provides setcap utility for granting capabilities
 # - lib* (non-dev): Runtime libraries for PHP extensions
 #
 # Build-only packages (removed after extensions are built):
@@ -96,6 +97,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     unzip \
     git \
+    libcap2-bin \
     # Build dependencies (will be removed later)
     libonig-dev \
     libxml2-dev \
