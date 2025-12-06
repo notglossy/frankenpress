@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  docker:
+  build:
     runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
     strategy:
       matrix:
@@ -33,6 +33,8 @@ jobs:
         # Split platforms to use native runners (amd64 on x64, arm64 on ARM)
         platform: ${{ github.event_name == 'pull_request' && fromJSON('["linux/amd64"]') || fromJSON('["linux/amd64", "linux/arm64"]') }}
       fail-fast: false
+    outputs:
+      php-versions: ${{ toJSON(matrix.php-version) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -56,39 +58,84 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: notglossy/frankenpress
+          images: |
+            notglossy/frankenpress
+            ghcr.io/${{ github.repository_owner }}/frankenpress
           labels: |
             org.opencontainers.image.title=FrankenPress (PHP ${{ matrix.php-version }} Trixie)
             org.opencontainers.image.description=WordPress running on FrankenPHP with Debian Trixie
             org.opencontainers.image.licenses=MIT
+          flavor: |
+            latest=false
 
-      - name: Set up Docker SBOM
-        uses: anchore/sbom-action/download-syft@v0.15.1
-
-      - name: Build and push
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v6
         with:
           platforms: ${{ matrix.platform }}
-          push: ${{ github.event_name != 'pull_request' }}
           context: .
-          tags: |
-            notglossy/frankenpress:php-${{ matrix.php-version }}-trixie
-            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-trixie
-            ${{ matrix.php-version == '8.4' && 'notglossy/frankenpress:trixie' || '' }}
-            ${{ matrix.php-version == '8.4' && 'notglossy/frankenpress:latest' || '' }}
-            ${{ matrix.php-version == '8.4' && format('ghcr.io/{0}/frankenpress:trixie', github.repository_owner) || '' }}
-            ${{ matrix.php-version == '8.4' && format('ghcr.io/{0}/frankenpress:latest', github.repository_owner) || '' }}
+          outputs: type=image,name=notglossy/frankenpress,push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
           cache-from: |
-            type=gha,scope=${{ matrix.platform }}
+            type=gha,scope=${{ matrix.platform }}-${{ matrix.php-version }}
             type=registry,ref=notglossy/frankenpress:php-${{ matrix.php-version }}-trixie
-          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}-${{ matrix.php-version }}
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
             DEBIAN_VERSION=trixie
           labels: ${{ steps.meta.outputs.labels }}
-          provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
-          sbom: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
+          provenance: false
+          sbom: false
+
+      - name: Build and push to GHCR by digest
+        id: build-ghcr
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ matrix.platform }}
+          context: .
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/frankenpress,push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          cache-from: |
+            type=gha,scope=${{ matrix.platform }}-${{ matrix.php-version }}
+          build-args: |
+            PHP_VERSION=${{ matrix.php-version }}
+            DEBIAN_VERSION=trixie
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          sbom: false
+
+      - name: Export digests
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p /tmp/digests/dockerhub/${{ matrix.php-version }}
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/dockerhub/${{ matrix.php-version }}/${digest#sha256:}"
+
+          mkdir -p /tmp/digests/ghcr/${{ matrix.php-version }}
+          digest="${{ steps.build-ghcr.outputs.digest }}"
+          touch "/tmp/digests/ghcr/${{ matrix.php-version }}/${digest#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.php-version }}-${{ strategy.job-index }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Load image for testing
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ matrix.platform }}
+          context: .
+          load: true
+          tags: notglossy/frankenpress:php-${{ matrix.php-version }}-trixie
+          cache-from: |
+            type=gha,scope=${{ matrix.platform }}-${{ matrix.php-version }}
+          build-args: |
+            PHP_VERSION=${{ matrix.php-version }}
+            DEBIAN_VERSION=trixie
+          labels: ${{ steps.meta.outputs.labels }}
 
       - name: Smoke test
         if: github.event_name == 'pull_request'
@@ -97,3 +144,58 @@ jobs:
           docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-trixie frankenphp version
           docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-trixie wp --version
           docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-trixie ls -la /usr/src/wordpress | grep wp-config-docker.php
+
+  merge:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    needs: [build]
+    strategy:
+      matrix:
+        php-version: ${{ github.event_name == 'pull_request' && fromJSON('[8.4]') || fromJSON('[8.2, 8.3, 8.4]') }}
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digests-${{ matrix.php-version }}-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push (Docker Hub)
+        working-directory: /tmp/digests/dockerhub/${{ matrix.php-version }}
+        run: |
+          docker buildx imagetools create \
+            -t notglossy/frankenpress:php-${{ matrix.php-version }}-trixie \
+            ${{ matrix.php-version == '8.4' && '-t notglossy/frankenpress:trixie -t notglossy/frankenpress:latest' || '' }} \
+            $(printf 'notglossy/frankenpress@sha256:%s ' *)
+
+      - name: Create manifest list and push (GHCR)
+        working-directory: /tmp/digests/ghcr/${{ matrix.php-version }}
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-trixie \
+            ${{ matrix.php-version == '8.4' && format('-t ghcr.io/{0}/frankenpress:trixie -t ghcr.io/{0}/frankenpress:latest', github.repository_owner) || '' }} \
+            $(printf 'ghcr.io/${{ github.repository_owner }}/frankenpress@sha256:%s ' *)
+
+      - name: Inspect image (Docker Hub)
+        run: |
+          docker buildx imagetools inspect notglossy/frankenpress:php-${{ matrix.php-version }}-trixie
+
+      - name: Inspect image (GHCR)
+        run: |
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-trixie
