@@ -27,7 +27,7 @@ ARG DEBIAN_VERSION=trixie
 # -----------------------------------------------------------------------------
 # Pull WordPress core files from the official WordPress Docker image
 # This stage is used only to extract files, not run WordPress
-FROM public.ecr.aws/docker/library/wordpress:$WORDPRESS_VERSION AS wp
+FROM wordpress:$WORDPRESS_VERSION AS wp
 
 # -----------------------------------------------------------------------------
 # Stage 2: Final FrankenPress Image
@@ -103,6 +103,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libcurl4-openssl-dev \
     libssl-dev \
+    libnss3-tools \
     libzip-dev \
     libjpeg-dev \
     libwebp-dev \
