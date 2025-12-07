@@ -83,8 +83,8 @@ jobs:
             PHP_VERSION=${{ matrix.php-version }}
             DEBIAN_VERSION=bookworm
           labels: ${{ steps.meta.outputs.labels }}
-          provenance: true
-          sbom: true
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
           load: ${{ github.event_name == 'pull_request' }}
 
       - name: Smoke test
