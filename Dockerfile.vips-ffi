@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	&& rm -rf /var/cache/apt/archives \
 	&& rm -rf /var/lib/apt/lists/*
 
-ADD https://github.com/notglossy/vips-image-editor-ffi/releases/download/v3.0.0/vips-image-editor-ffi-3.0.0.zip /tmp/vips-image-editor-ffi.zip
+ADD https://github.com/notglossy/vips-image-editor-ffi/releases/download/v3.1.0/vips-image-editor-ffi-3.1.0.zip /tmp/vips-image-editor-ffi.zip
 RUN unzip /tmp/vips-image-editor-ffi.zip -d /usr/src/wordpress/wp-content/plugins/ \
 	&& rm -rf /tmp/vips-image-editor-ffi.zip \
 	&& echo 'zend.max_allowed_stack_size=-1' >> /usr/local/etc/php/conf.d/stack-size.ini \
