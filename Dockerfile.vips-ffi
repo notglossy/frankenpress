@@ -11,6 +11,9 @@ USER root
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	libvips42 \
+	libheif1 \
+	libheif-plugin-aomdec \
+	libheif-plugin-aomenc \
 	&& install-php-extensions ffi \
 	&& rm -rf /var/cache/apt/archives \
 	&& 	rm -rf /var/lib/apt/lists/*
