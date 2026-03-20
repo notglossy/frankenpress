@@ -12,11 +12,15 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	libvips42 \
 	libheif1 \
-	libheif-plugin-aomdec \
-	libheif-plugin-aomenc \
+	libaom3 \
+	&& if apt-cache show libheif-plugin-aomdec >/dev/null 2>&1; then \
+		apt-get install -y --no-install-recommends \
+			libheif-plugin-aomdec \
+			libheif-plugin-aomenc; \
+	fi \
 	&& install-php-extensions ffi \
 	&& rm -rf /var/cache/apt/archives \
-	&& 	rm -rf /var/lib/apt/lists/*
+	&& rm -rf /var/lib/apt/lists/*
 
 ADD https://github.com/notglossy/vips-image-editor-ffi/releases/download/v3.0.0/vips-image-editor-ffi-3.0.0.zip /tmp/vips-image-editor-ffi.zip
 RUN unzip /tmp/vips-image-editor-ffi.zip -d /usr/src/wordpress/wp-content/plugins/ \
