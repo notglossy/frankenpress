@@ -28,7 +28,7 @@ docker run -d \
 - `notglossy/frankenpress:php-8.5-vips-ffi-trixie` - PHP 8.5 VIPS on Debian Trixie (amd64, arm64)
 - `notglossy/frankenpress:php-8.4-vips-ffi-trixie` - PHP 8.4 VIPS on Debian Trixie (amd64, arm64)
 
-All images are built on Debian 13 (Trixie). Debian Bookworm and 32-bit ARM (arm/v7) images are no longer built.
+All images are built on [Docker Hardened Images](https://www.docker.com/products/hardened-images/) (Debian 13 Trixie) through [frankenpress-src](https://github.com/notglossy/frankenpress-src). Debian Bookworm and 32-bit ARM (arm/v7) images are no longer built.
 
 **Migrating from Bookworm:** the `bookworm`, `php-*-bookworm` and `vips-ffi-bookworm` tags are still published but no longer rebuilt, so they won't get Debian, PHP or WordPress security updates. Switch to the matching `-trixie` tag (e.g. `php-8.4-bookworm` → `php-8.4-trixie`). There is no replacement for arm/v7.
 
@@ -47,6 +47,7 @@ Standard image arm64 builds run on native GitHub-hosted ARM runners (`ubuntu-24.
 
 - **[WordPress](https://wordpress.org/)** - Latest version from official WordPress Docker images
 - **[FrankenPHP](https://frankenphp.dev/)** - Modern PHP application server (custom builds from [frankenpress-src](https://github.com/notglossy/frankenpress-src))
+- **[Docker Hardened Images](https://www.docker.com/products/hardened-images/)** - Minimal Debian runtime with no package manager, running as a non-root user
 - **[Caddy](https://caddyserver.com/)** - Fast, secure web server with automatic HTTPS
 - **PHP Extensions** - Optimized selection for WordPress performance
 
@@ -70,9 +71,12 @@ Standard image arm64 builds run on native GitHub-hosted ARM runners (`ubuntu-24.
 - zip
 - imagick
 
+Imagick supports JPEG, PNG, GIF, WebP, AVIF, HEIC (decoding) and PDF (through Ghostscript). SVG, WMF, DjVu and OpenEXR are not included.
+
 **VIPS Images Only:**
 - FFI (Foreign Function Interface)
 - libvips (high-performance image processing)
+- [vips-image-editor-ffi](https://github.com/notglossy/vips-image-editor-ffi) WordPress plugin
 
 ### Environment Variables
 
@@ -107,7 +111,30 @@ FrankenPHP is built on Caddy, a modern web server built in Go. It is secure & pe
 
 ### Why is Non-Root User Important?
 
-It is good practice to avoid using root users in your Docker images for security purposes. If a questionable individual gets access into your running Docker container with root account then they could have access to the cluster and all the resources it manages. This could be problematic. On the other hand, by creating a user specific to the Docker image, narrows the threat to only the image itself. It is also important to note that the base WordPress images also create non-root users by default.
+It is good practice to avoid using root users in your Docker images for security purposes. If a questionable individual gets access into your running Docker container with root account then they could have access to the cluster and all the resources it manages. This could be problematic. Running as an unprivileged user narrows the threat to only the image itself.
+
+FrankenPress runs as the Docker Hardened Images `nonroot` user (UID/GID 65532). FrankenPHP can still bind ports 80 and 443. Volumes mounted at `/var/www/html` must be writable by UID 65532; on platforms that mount volumes owned by root (e.g. AWS ECS), set the ownership or permissions accordingly.
+
+### How do I add packages or PHP extensions?
+
+The runtime image has no package manager (`apt-get`), compiler or `install-php-extensions`. Install packages in the matching frankenpress-src `-dev` image, then copy them onto FrankenPress with `fp-collect-runtime`, which copies the named packages plus every Debian package their libraries need:
+
+```dockerfile
+FROM notglossy/frankenpress:php-8.4-trixie AS base
+
+FROM ghcr.io/notglossy/frankenpress-src:php8.4-trixie-dev AS build
+# Skip packages FrankenPress already ships
+COPY --from=base /var/lib/dpkg/status.d /usr/local/share/frankenpress/base-status.d
+RUN apt-get update && apt-get install -y --no-install-recommends less \
+    && fp-collect-runtime /rootfs less \
+    # /usr/local (PHP, extensions, config) comes from the base image
+    && rm -rf /rootfs/usr/local
+
+FROM base
+COPY --from=build /rootfs/ /
+```
+
+PHP extensions are compiled with [PIE](https://github.com/php/pie) in the `-dev` image; see `Dockerfile` for how the bundled extensions are built and collected, and `Dockerfile.vips-ffi` for a complete example of extending the image.
 
 
 ### How to use when behind load balancer or proxy?

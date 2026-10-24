@@ -102,9 +102,15 @@ jobs:
           if echo "$startup" | grep -Ei 'warning|error'; then echo "PHP printed startup warnings"; exit 1; fi
           modules=$(docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-trixie-amd64 php -m)
           echo "$modules" | grep -qx 'Zend OPcache'
-          for ext in bcmath exif gd intl mysqli zip imagick memcached apcu redis igbinary msgpack; do
+          exts="bcmath exif gd intl mysqli zip imagick memcached apcu redis igbinary msgpack"
+          ${{ matrix.php-version < 8.5 && 'exts="$exts memcache"' || '' }}
+          for ext in $exts; do
             echo "$modules" | grep -qix "$ext" || { echo "Missing extension: $ext"; exit 1; }
           done
+          # Runs as the DHI nonroot user; runtime tools the entrypoint and Imagick need
+          test "$(docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-trixie-amd64 id -u)" = 65532
+          docker run --rm --entrypoint bash notglossy/frankenpress:php-${{ matrix.php-version }}-trixie-amd64 -c 'awk "BEGIN{exit 0}" && gs --version'
+          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-trixie-amd64 php -r 'foreach (["JPEG", "PNG", "WEBP", "AVIF", "HEIC", "PDF"] as $f) { if (!Imagick::queryFormats($f)) { echo "Imagick missing $f\n"; exit(1); } }'
 
   create-manifests:
     if: github.event_name != 'pull_request'

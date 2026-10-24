@@ -132,4 +132,5 @@ jobs:
           docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie frankenphp version
           docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie wp --version
           docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie ls -la /usr/src/wordpress | grep wp-config-docker.php
-          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie dpkg -l | grep libvips
+          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie ls /var/lib/dpkg/status.d/libvips42t64
+          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie php -r '$f = FFI::cdef("int vips_init(const char *argv0); const char *vips_version_string(void);", "libvips.so.42"); if ($f->vips_init("php") !== 0) exit(1); echo "libvips ", $f->vips_version_string(), "\n";'

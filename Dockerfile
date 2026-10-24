@@ -1,16 +1,18 @@
 # =============================================================================
-# FrankenPress - Optimized WordPress Docker Image
+# FrankenPress - WordPress on FrankenPHP and Docker Hardened Images
 # =============================================================================
 # This Dockerfile creates a production-ready WordPress container using:
 # - FrankenPHP: A modern PHP application server written in Go
 # - Caddy: An automatic HTTPS server with integrated reverse proxy
 # - WordPress: The world's most popular CMS
 #
-# The image is optimized for:
-# - Minimal layers (better caching and smaller image size)
-# - Layer ordering based on change frequency (faster rebuilds)
-# - Security (runs as non-root user)
-# - Performance (OpCache, APCu, OPcache optimizations)
+# Base images come from frankenpress-src, which builds PHP and FrankenPHP on
+# Docker Hardened Images (dhi.io):
+# - The -dev image is a full build environment (apt, compilers, PIE). PHP
+#   extensions are compiled there, and fp-collect-runtime gathers /usr/local
+#   plus every Debian package the result needs into /rootfs.
+# - The runtime image is a clean dhi.io/debian-base with no package manager,
+#   running as the nonroot user (UID 65532). /rootfs is copied onto it.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -20,7 +22,13 @@
 # Example: docker build --build-arg PHP_VERSION=8.2 .
 ARG WORDPRESS_VERSION=latest
 ARG PHP_VERSION=8.4
+# Only trixie is built.
 ARG DEBIAN_VERSION=trixie
+ARG SRC_IMAGE=ghcr.io/notglossy/frankenpress-src
+# Override these to build against locally built frankenpress-src images, e.g.
+# --build-arg BUILD_IMAGE=frankenpress-src:dhi-dev --build-arg RUNTIME_IMAGE=frankenpress-src:dhi
+ARG BUILD_IMAGE=${SRC_IMAGE}:php${PHP_VERSION}-${DEBIAN_VERSION}-dev
+ARG RUNTIME_IMAGE=${SRC_IMAGE}:php${PHP_VERSION}-${DEBIAN_VERSION}
 
 # -----------------------------------------------------------------------------
 # Stage 1: WordPress Source Files
@@ -30,122 +38,67 @@ ARG DEBIAN_VERSION=trixie
 FROM wordpress:$WORDPRESS_VERSION AS wp
 
 # -----------------------------------------------------------------------------
-# Stage 2: Final FrankenPress Image
+# Stage 2: Build PHP Extensions and Collect the Runtime Filesystem
 # -----------------------------------------------------------------------------
-# Base image uses custom FrankenPHP builds from ghcr.io/notglossy/frankenpress-src
-# Format: php{VERSION}-{DEBIAN_VERSION}-{ARCH}
-FROM ghcr.io/notglossy/frankenpress-src:php${PHP_VERSION}-${DEBIAN_VERSION} AS base
+FROM ${BUILD_IMAGE} AS build
+
+# memcache has no PIE package, so it is built from its PECL release.
+ARG MEMCACHE_VERSION=8.2
 
 # -----------------------------------------------------------------------------
-# Metadata Labels
+# PHP Extensions
 # -----------------------------------------------------------------------------
-# OCI-compliant image labels for container registries and tooling
-# See: https://github.com/opencontainers/image-spec/blob/main/annotations.md
-LABEL org.opencontainers.image.title=FrankenPress \
-      org.opencontainers.image.description="Optimized WordPress containers to run everywhere. Built with FrankenPHP & Caddy." \
-      org.opencontainers.image.source=https://github.com/notglossy/frankenpress \
-      org.opencontainers.image.licenses=MIT \
-      org.opencontainers.image.vendor="Not Glossy"
-
-# -----------------------------------------------------------------------------
-# Environment Variables
-# -----------------------------------------------------------------------------
-# FORCE_HTTPS: Set to 1 to force HTTPS in WordPress (sets $_SERVER['HTTPS'])
-# PHP_INI_SCAN_DIR: Directory for additional PHP configuration files
-# PAGER: Default pager for terminal sessions (useful for WP-CLI)
-ENV FORCE_HTTPS=0 \
-    PHP_INI_SCAN_DIR=$PHP_INI_DIR/conf.d \
-    PAGER=more
-
-# -----------------------------------------------------------------------------
-# System Dependencies and PHP Extensions
-# -----------------------------------------------------------------------------
-# Combined into a single layer to minimize image size and improve build cache.
-# This layer installs runtime and build dependencies, compiles PHP extensions,
-# then removes build-only dependencies to reduce final image size.
-#
-# Runtime packages (kept in final image):
-# - ca-certificates: SSL/TLS certificate validation
-# - ghostscript: PDF generation and manipulation
-# - curl: HTTP client for WP-CLI and downloads
-# - unzip: Archive extraction
-# - git: Version control (useful for plugin/theme development)
-# - libcap2-bin: Provides setcap utility for granting capabilities
-# - lib* (non-dev): Runtime libraries for PHP extensions
-#
-# Build-only packages (removed after extensions are built):
-# - *-dev: Development headers needed to compile PHP extensions
-#
-# PHP extensions installed via install-php-extensions script:
+# Bundled extensions (built as shared modules by the base image, enabled here):
 # - bcmath: Arbitrary precision mathematics (WooCommerce, etc.)
 # - exif: Image metadata extraction
 # - gd: Image manipulation library
 # - intl: Internationalization support
 # - mysqli: MySQL database driver
 # - zip: Archive handling
-# - imagick: Advanced image processing (alternative to GD)
-# - opcache: Bytecode caching for performance
-# - memcache/memcached: Object caching backends (memcache only on PHP < 8.5,
-#   its latest PECL release doesn't compile on 8.5)
-# - apcu: In-memory user cache
-# - redis: Object caching and sessions
-# - igbinary/msgpack: Efficient serialization for caching
+# OPcache is already enabled by the base image.
 #
-# See: https://github.com/mlocati/docker-php-extension-installer
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    ghostscript \
-    curl \
-    unzip \
-    git \
-    libcap2-bin \
-    # Build dependencies (will be removed later)
-    libonig-dev \
-    libxml2-dev \
-    libcurl4-openssl-dev \
-    libssl-dev \
-    libnss3-tools \
-    libzip-dev \
-    libjpeg-dev \
-    libwebp-dev \
-    zlib1g-dev \
-    && install-php-extensions \
-        bcmath \
-        exif \
-        gd \
-        intl \
-        mysqli \
-        zip \
-        imagick \
-        opcache \
-        memcached \
-        apcu \
-        redis \
-        igbinary \
-        msgpack \
-        $(php -r 'echo PHP_VERSION_ID < 80500 ? "memcache" : "";') \
-    # Remove build dependencies to reduce image size
-    && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
-        libonig-dev \
-        libxml2-dev \
-        libcurl4-openssl-dev \
-        libssl-dev \
-        libzip-dev \
-        libjpeg-dev \
-        libwebp-dev \
-        zlib1g-dev \
-    # Clean up additional bloat
-    && rm -rf /var/lib/apt/lists/* \
-        /tmp/* \
-        /var/tmp/* \
-        /usr/share/doc/* \
-        /usr/share/man/*
+# PECL extensions, installed with PIE (https://github.com/php/pie):
+# - igbinary/msgpack: Efficient serialization for caching (also enabled as
+#   serializers in redis and memcached). igbinary 3.2.16 doesn't compile on
+#   PHP 8.5 and only 3.2.17RC1 is on Packagist, so RCs are allowed for it.
+# - apcu: In-memory user cache
+# - imagick: Advanced image processing (alternative to GD)
+# - redis: Object caching and sessions
+# - memcached: Object caching backend
+# - memcache: Object caching backend, PHP < 8.5 only (its latest PECL release
+#   doesn't compile on 8.5)
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ghostscript \
+        libheif-plugin-aomenc \
+        libmagickwand-dev \
+        libmemcached-dev \
+        libtool \
+    ; \
+    rm -rf /var/lib/apt/lists/*; \
+    for ext in bcmath exif gd intl mysqli zip; do \
+        echo "extension=$ext" > "$PHP_INI_DIR/conf.d/$ext.ini"; \
+    done; \
+    pie install 'igbinary/igbinary:^3.2.17@RC'; \
+    pie install msgpack/msgpack-php; \
+    pie install apcu/apcu; \
+    pie install imagick/imagick; \
+    pie install phpredis/phpredis --enable-redis-igbinary --enable-redis-msgpack; \
+    pie install php-memcached/php-memcached --enable-memcached-igbinary --enable-memcached-msgpack; \
+    if php -r 'exit(PHP_VERSION_ID < 80500 ? 0 : 1);'; then \
+        mkdir /tmp/memcache; \
+        curl -fsSL "https://pecl.php.net/get/memcache-${MEMCACHE_VERSION}.tgz" | tar -xz -C /tmp/memcache --strip-components=1; \
+        (cd /tmp/memcache && phpize && ./configure && make -j "$(nproc)" && make install); \
+        rm -rf /tmp/memcache; \
+        echo 'extension=memcache' > "$PHP_INI_DIR/conf.d/80-memcache.ini"; \
+    fi; \
+    find "$(php-config --extension-dir)" -name '*.so' -exec strip --strip-unneeded {} +; \
+    php -m
 
 # -----------------------------------------------------------------------------
 # PHP Configuration
 # -----------------------------------------------------------------------------
-# Consolidated into a single layer to reduce image size.
-#
 # 1. Base PHP.ini: Start with production-recommended settings
 # 2. OpCache settings: Configure bytecode caching for performance
 #    - memory_consumption: 128MB for caching compiled scripts
@@ -187,9 +140,8 @@ RUN cp $PHP_INI_DIR/php.ini-production $PHP_INI_DIR/php.ini \
 # WordPress Command Line Interface for managing WordPress from the terminal.
 # Useful for plugin/theme management, database operations, and automation.
 # See: https://wp-cli.org/
-RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
-    && chmod +x wp-cli.phar \
-    && mv wp-cli.phar /usr/local/bin/wp
+RUN curl -fsSLo /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
+    && chmod +x /usr/local/bin/wp
 
 # -----------------------------------------------------------------------------
 # WordPress Core Files
@@ -200,9 +152,9 @@ RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli
 # - docker-entrypoint.sh: WordPress initialization script
 #
 # PHP configuration is deliberately NOT copied: the WordPress image is built
-# against a different PHP version, and its docker-php-ext-*.ini loaders break
-# extensions here (e.g. OPcache is built into PHP 8.5 and can't be loaded).
-COPY --from=wp /usr/src/wordpress /usr/src/wordpress
+# against a different PHP version, and its docker-php-ext-*.ini loaders would
+# break extensions here.
+COPY --from=wp /usr/src/wordpress /rootfs/usr/src/wordpress
 COPY --from=wp /usr/local/bin/docker-entrypoint.sh /usr/local/bin/
 
 # -----------------------------------------------------------------------------
@@ -217,7 +169,63 @@ RUN sed -i \
         -e 's/\[ "$1" = '\''php-fpm'\'' \]/\[\[ "$1" == frankenphp* \]\]/g' \
         -e 's/php-fpm/frankenphp/g' \
         /usr/local/bin/docker-entrypoint.sh \
-    && sed -i 's/<?php/<?php if (!!getenv("FORCE_HTTPS")) { \$_SERVER["HTTPS"] = "on"; } define( "FS_METHOD", "direct" ); set_time_limit(300); /g' /usr/src/wordpress/wp-config-docker.php
+    && sed -i 's/<?php/<?php if (!!getenv("FORCE_HTTPS")) { \$_SERVER["HTTPS"] = "on"; } define( "FS_METHOD", "direct" ); set_time_limit(300); /g' /rootfs/usr/src/wordpress/wp-config-docker.php
+
+# -----------------------------------------------------------------------------
+# Runtime Filesystem
+# -----------------------------------------------------------------------------
+# fp-collect-runtime copies /usr/local (PHP, extensions, config, WP-CLI,
+# entrypoint) and every Debian package whose libraries it needs into /rootfs.
+# Extra runtime packages, copied whole:
+# - ghostscript, libgs*-common: PDF thumbnails through Imagick
+# - libmagickcore-7.q16-10, imagemagick-7-common, libmagickcore-7-arch-config:
+#   ImageMagick coder modules (JPEG, PNG, WebP, HEIC, PDF, ...) and config,
+#   which are loaded at runtime and so aren't found through ldd
+# - libheif plugins: AVIF/HEIC decoding (dav1d, libde265), AVIF encoding (aom)
+# - mawk: docker-entrypoint.sh uses awk to generate wp-config.php salts
+#
+# /var/www/html is created owned by the nonroot user (UID 65532).
+RUN set -eux; \
+    fp-collect-runtime /rootfs \
+        ghostscript \
+        libgs10-common \
+        libgs-common \
+        libmagickcore-7.q16-10 \
+        imagemagick-7-common \
+        libmagickcore-7-arch-config \
+        libheif-plugin-aomenc \
+        libheif-plugin-dav1d \
+        libheif-plugin-libde265 \
+        mawk \
+    ; \
+    ln -s mawk /rootfs/usr/bin/awk; \
+    install -d -o 65532 -g 65532 /rootfs/var/www/html
+
+# -----------------------------------------------------------------------------
+# Stage 3: Final FrankenPress Image
+# -----------------------------------------------------------------------------
+FROM ${RUNTIME_IMAGE}
+
+# -----------------------------------------------------------------------------
+# Metadata Labels
+# -----------------------------------------------------------------------------
+# OCI-compliant image labels for container registries and tooling
+# See: https://github.com/opencontainers/image-spec/blob/main/annotations.md
+LABEL org.opencontainers.image.title=FrankenPress \
+      org.opencontainers.image.description="Optimized WordPress containers to run everywhere. Built with FrankenPHP & Caddy." \
+      org.opencontainers.image.source=https://github.com/notglossy/frankenpress \
+      org.opencontainers.image.licenses=MIT \
+      org.opencontainers.image.vendor="Not Glossy"
+
+# -----------------------------------------------------------------------------
+# Environment Variables
+# -----------------------------------------------------------------------------
+# FORCE_HTTPS: Set to 1 to force HTTPS in WordPress (sets $_SERVER['HTTPS'])
+# PAGER: Pager for WP-CLI help (the runtime image has no more or less)
+ENV FORCE_HTTPS=0 \
+    PAGER=cat
+
+COPY --from=build /rootfs/ /
 
 # -----------------------------------------------------------------------------
 # Custom Configuration Files
@@ -231,54 +239,26 @@ COPY php.ini $PHP_INI_DIR/conf.d/wp.ini
 COPY Caddyfile /etc/caddy/Caddyfile
 
 # -----------------------------------------------------------------------------
-# User and Permissions Setup
-# -----------------------------------------------------------------------------
-# Configure the container to run as a non-root user for security.
-# This layer must come after all file copies to set proper ownership.
-#
-# Steps:
-# 1. Create user if it doesn't exist (default: www-data)
-# 2. Grant FrankenPHP permission to bind to ports 80/443 without root
-# 3. Set ownership of all WordPress and Caddy directories
-#
-# NOTE: On some platforms (e.g., AWS ECS), volume mounts are owned by root.
-# You may need to use USER_NAME=root or modify the entrypoint to chown volumes.
-ARG USER_NAME=www-data
-
-RUN if id "${USER_NAME}" &>/dev/null; then \
-        echo "User ${USER_NAME} already exists"; \
-    else \
-        useradd -m ${USER_NAME}; \
-    fi \
-    && setcap CAP_NET_BIND_SERVICE=+eip /usr/local/bin/frankenphp \
-    && chown -R ${USER_NAME}:${USER_NAME} /data/caddy \
-        /config/caddy \
-        /var/www/html \
-        /usr/src/wordpress \
-        /usr/local/bin/docker-entrypoint.sh
-
-# -----------------------------------------------------------------------------
 # Container Runtime Configuration
 # -----------------------------------------------------------------------------
-# Define persistent volume mount point for WordPress files
+# Runs as the base image's nonroot user (UID/GID 65532), which owns
+# /var/www/html, /data and /config.
+#
+# NOTE: On some platforms (e.g., AWS ECS), volume mounts are owned by root.
+# Make sure the volume is writable by UID 65532.
 VOLUME /var/www/html
-
-# Set working directory for all subsequent commands and container shell access
 WORKDIR /var/www/html
-
-# Switch to non-root user (all subsequent commands run as this user)
-USER $USER_NAME
+USER 65532
 
 # -----------------------------------------------------------------------------
 # Entrypoint and Command
 # -----------------------------------------------------------------------------
-# Entrypoint: WordPress initialization script (copies core files, sets up db)
+# Entrypoint: WordPress initialization script
 # Command: Start FrankenPHP server with Caddy configuration
 #
 # The entrypoint handles:
 # - Copying WordPress core files to /var/www/html if not present
-# - Generating wp-config.php from environment variables
-# - Database connection and installation
+# - Generating wp-config.php from WORDPRESS_* environment variables
 #
 # To override the command (e.g., for debugging):
 # docker run -it frankenpress bash
