@@ -19,7 +19,7 @@
 # These can be overridden at build time using --build-arg
 # Example: docker build --build-arg PHP_VERSION=8.2 .
 ARG WORDPRESS_VERSION=latest
-ARG PHP_VERSION=8.3
+ARG PHP_VERSION=8.4
 ARG DEBIAN_VERSION=trixie
 
 # -----------------------------------------------------------------------------
@@ -85,7 +85,8 @@ ENV FORCE_HTTPS=0 \
 # - zip: Archive handling
 # - imagick: Advanced image processing (alternative to GD)
 # - opcache: Bytecode caching for performance
-# - memcache/memcached: Object caching backends
+# - memcache/memcached: Object caching backends (memcache only on PHP < 8.5,
+#   its latest PECL release doesn't compile on 8.5)
 # - apcu: In-memory user cache
 # - redis: Object caching and sessions
 # - igbinary/msgpack: Efficient serialization for caching
@@ -117,12 +118,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         zip \
         imagick \
         opcache \
-        memcache \
         memcached \
         apcu \
         redis \
         igbinary \
         msgpack \
+        $(php -r 'echo PHP_VERSION_ID < 80500 ? "memcache" : "";') \
     # Remove build dependencies to reduce image size
     && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
         libonig-dev \
@@ -193,13 +194,15 @@ RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli
 # -----------------------------------------------------------------------------
 # WordPress Core Files
 # -----------------------------------------------------------------------------
-# Copy WordPress core files and configuration from the official WordPress image.
+# Copy WordPress core files from the official WordPress image.
 # This includes:
 # - /usr/src/wordpress: WordPress core files (copied to /var/www/html on start)
-# - PHP configuration from WordPress image
 # - docker-entrypoint.sh: WordPress initialization script
+#
+# PHP configuration is deliberately NOT copied: the WordPress image is built
+# against a different PHP version, and its docker-php-ext-*.ini loaders break
+# extensions here (e.g. OPcache is built into PHP 8.5 and can't be loaded).
 COPY --from=wp /usr/src/wordpress /usr/src/wordpress
-COPY --from=wp /usr/local/etc/php/conf.d /usr/local/etc/php/conf.d/
 COPY --from=wp /usr/local/bin/docker-entrypoint.sh /usr/local/bin/
 
 # -----------------------------------------------------------------------------

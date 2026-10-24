@@ -17,42 +17,24 @@ docker run -d \
 ## Available Images
 
 ### Standard Images
-- `notglossy/frankenpress:latest` - Latest with Debian Trixie (amd64, arm64)
+- `notglossy/frankenpress:latest` - Latest (PHP 8.4) on Debian Trixie (amd64, arm64)
+- `notglossy/frankenpress:php-8.5-trixie` - PHP 8.5 on Debian Trixie (amd64, arm64)
 - `notglossy/frankenpress:php-8.4-trixie` - PHP 8.4 on Debian Trixie (amd64, arm64)
-- `notglossy/frankenpress:php-8.4-bookworm` - PHP 8.4 on Debian Bookworm (amd64, arm64, arm/v7)
 - `notglossy/frankenpress:php-8.3-trixie` - PHP 8.3 on Debian Trixie (amd64, arm64)
-- `notglossy/frankenpress:php-8.3-bookworm` - PHP 8.3 on Debian Bookworm (amd64, arm64, arm/v7)
 - `notglossy/frankenpress:php-8.2-trixie` - PHP 8.2 on Debian Trixie (amd64, arm64)
-- `notglossy/frankenpress:php-8.2-bookworm` - PHP 8.2 on Debian Bookworm (amd64, arm64, arm/v7)
 
 ### VIPS Images (with FFI support for advanced image processing)
-- `notglossy/frankenpress:vips-ffi` - Latest VIPS with Debian Trixie (amd64, arm64)
+- `notglossy/frankenpress:vips-ffi` - Latest VIPS (PHP 8.4) on Debian Trixie (amd64, arm64)
+- `notglossy/frankenpress:php-8.5-vips-ffi-trixie` - PHP 8.5 VIPS on Debian Trixie (amd64, arm64)
 - `notglossy/frankenpress:php-8.4-vips-ffi-trixie` - PHP 8.4 VIPS on Debian Trixie (amd64, arm64)
-- `notglossy/frankenpress:php-8.4-vips-ffi-bookworm` - PHP 8.4 VIPS on Debian Bookworm (amd64, arm64, arm/v7)
 
-**Note:** ARM v7 (32-bit) support is only available with Debian Bookworm due to package availability limitations in Trixie.
+All images are built on Debian 13 (Trixie). Debian Bookworm and 32-bit ARM (arm/v7) images are no longer built.
 
-## Choosing Between Trixie and Bookworm
-
-### Debian Trixie (Recommended)
-- **Testing Debian release** (currently testing, will become stable)
-- Newer packages and features
-- Available for: `linux/amd64`, `linux/arm64`
-- Default for `:latest` tag
-- Built on native ARM runners for faster builds
-
-### Debian Bookworm
-- **Current stable Debian release**
-- More mature, wider package support
-- Available for: `linux/amd64`, `linux/arm64`, `linux/arm/v7`
-- **Required for 32-bit ARM (arm/v7)** devices like Raspberry Pi 2/3
-- Built on native ARM runners for faster builds
-
-Use Bookworm if you need ARM v7 support or prefer a more established base. Otherwise, use Trixie for the latest packages.
+**Migrating from Bookworm:** the `bookworm`, `php-*-bookworm` and `vips-ffi-bookworm` tags are still published but no longer rebuilt, so they won't get Debian, PHP or WordPress security updates. Switch to the matching `-trixie` tag (e.g. `php-8.4-bookworm` → `php-8.4-trixie`). There is no replacement for arm/v7.
 
 ## Performance & Build Optimization
 
-All ARM builds (arm64 and arm/v7) are built on native GitHub-hosted ARM runners (`ubuntu-24.04-arm`) for maximum performance and speed. This eliminates QEMU emulation overhead, resulting in significantly faster build times and better performance.
+Standard image arm64 builds run on native GitHub-hosted ARM runners (`ubuntu-24.04-arm`) for maximum performance and speed. This eliminates QEMU emulation overhead, resulting in significantly faster build times.
 
 ## Links
 
@@ -73,7 +55,7 @@ All ARM builds (arm64 and arm/v7) are built on native GitHub-hosted ARM runners 
 **Performance & Caching:**
 - OPcache (configured for production)
 - APCu
-- Memcache
+- Memcache (PHP 8.4 and earlier)
 - Memcached
 - Redis
 - igbinary

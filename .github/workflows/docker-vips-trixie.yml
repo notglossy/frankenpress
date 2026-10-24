@@ -1,14 +1,18 @@
 name: Build Docker VIPS Images (Trixie)
 
 on:
+  # Rebuild after the base images are published, so VIPS images always build
+  # on the latest base (covers base Dockerfile changes and the weekly schedule).
+  workflow_run:
+    workflows: ["Build Docker Images (Trixie)"]
+    types: [completed]
+    branches: [main]
+  # VIPS-only changes don't trigger the base workflow, so build them directly.
   push:
     branches:
       - main
     paths:
       - 'Dockerfile.vips-ffi'
-      - 'Dockerfile'
-      - 'Caddyfile'
-      - 'php.ini'
       - '.github/workflows/docker-vips-trixie.yml'
   pull_request:
     paths:
@@ -17,8 +21,6 @@ on:
       - 'Caddyfile'
       - 'php.ini'
       - '.github/workflows/docker-vips-trixie.yml'
-  schedule:
-    - cron: "0 7 * * 0" # Every Sunday at 7 AM UTC
   workflow_dispatch:
 
 concurrency:
@@ -27,37 +29,62 @@ concurrency:
 
 jobs:
   docker:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # Only build PHP 8.4 for PRs to speed up CI, build all versions for main branch
-        php-version: ${{ github.event_name == 'pull_request' && fromJSON('[8.4]') || fromJSON('[8.2, 8.3, 8.4]') }}
+        # Only build PHP 8.4 and 8.5 for PRs to speed up CI, build all versions for main branch
+        php-version: ${{ github.event_name == 'pull_request' && fromJSON('[8.4, 8.5]') || fromJSON('[8.2, 8.3, 8.4, 8.5]') }}
       fail-fast: false
+    # Local registry used on PRs to hand the freshly built base image to the VIPS build
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: network=host
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # On PRs, build the base image from this PR instead of relying on a published
+      # tag (which may be stale, or not exist yet for a newly added PHP version).
+      - name: Build base image (PR only)
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          platforms: linux/amd64
+          context: .
+          push: true
+          tags: localhost:5000/frankenpress:php-${{ matrix.php-version }}-trixie
+          cache-from: type=gha,scope=linux/amd64-${{ matrix.php-version }}
+          build-args: |
+            PHP_VERSION=${{ matrix.php-version }}
+            DEBIAN_VERSION=trixie
+          provenance: false
+
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: notglossy/frankenpress
           labels: |
@@ -66,10 +93,10 @@ jobs:
             org.opencontainers.image.licenses=MIT
 
       - name: Set up Docker SBOM
-        uses: anchore/sbom-action/download-syft@v0.15.1
+        uses: anchore/sbom-action/download-syft@v0.24.2
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
           push: ${{ github.event_name != 'pull_request' }}
@@ -83,12 +110,13 @@ jobs:
             ${{ matrix.php-version == '8.4' && format('ghcr.io/{0}/frankenpress:vips-ffi-trixie', github.repository_owner) || '' }}
             ${{ matrix.php-version == '8.4' && format('ghcr.io/{0}/frankenpress:vips-ffi', github.repository_owner) || '' }}
           cache-from: |
-            type=gha
+            type=gha,scope=vips-${{ matrix.php-version }}
             type=registry,ref=notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,scope=vips-${{ matrix.php-version }}
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
             DEBIAN_VERSION=trixie
+            ${{ github.event_name == 'pull_request' && format('BASE_IMAGE=localhost:5000/frankenpress:php-{0}-trixie', matrix.php-version) || '' }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
           sbom: ${{ github.event_name != 'pull_request' }}
