@@ -1,31 +1,43 @@
 # Define build arguments that can be overridden at build time
 ARG WORDPRESS_VERSION=latest
 ARG PHP_VERSION=8.4
-# Only trixie is supported: the libheif AOM plugin packages below don't exist
-# in older Debian releases.
+# Only trixie is built.
 ARG DEBIAN_VERSION=trixie
 # Base FrankenPress image. Defaults to the published tag; CI overrides it on
 # pull requests to build on top of the base image built from the PR.
 ARG BASE_IMAGE=ghcr.io/notglossy/frankenpress:php-${PHP_VERSION}-${DEBIAN_VERSION}
+# frankenpress-src build environment, used to collect libvips and its libraries.
+ARG BUILD_IMAGE=ghcr.io/notglossy/frankenpress-src:php${PHP_VERSION}-${DEBIAN_VERSION}-dev
 
-FROM ${BASE_IMAGE}
+FROM ${BASE_IMAGE} AS base
 
-USER root
+FROM ${BUILD_IMAGE} AS build
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-	libvips42 \
-	libheif1 \
-	libaom3 \
-	libheif-plugin-aomdec \
-	libheif-plugin-aomenc \
-	&& install-php-extensions ffi \
-	&& rm -rf /var/cache/apt/archives \
-	&& rm -rf /var/lib/apt/lists/*
+# Let fp-collect-runtime skip every package the FrankenPress image already has.
+COPY --from=base /var/lib/dpkg/status.d /usr/local/share/frankenpress/base-status.d
 
 ADD https://github.com/notglossy/vips-image-editor-ffi/releases/download/v3.1.0/vips-image-editor-ffi-3.1.0.zip /tmp/vips-image-editor-ffi.zip
-RUN unzip /tmp/vips-image-editor-ffi.zip -d /usr/src/wordpress/wp-content/plugins/ \
-	&& rm -rf /tmp/vips-image-editor-ffi.zip \
-	&& echo 'zend.max_allowed_stack_size=-1' >> /usr/local/etc/php/conf.d/stack-size.ini \
-	&& echo 'ffi.enable=true' >> /usr/local/etc/php/conf.d/docker-php-ext-ffi.ini
 
-USER www-data
+# libvips and the libheif AOM plugins (AVIF decoding/encoding) plus the libraries
+# they need. /usr/local comes from the base image, so only the ini files are kept.
+# FFI is a bundled shared extension in the base image; enable it here.
+RUN set -eux; \
+	apt-get update; \
+	apt-get install -y --no-install-recommends \
+		libvips42t64 \
+		libheif-plugin-aomdec \
+		libheif-plugin-aomenc \
+	; \
+	rm -rf /var/lib/apt/lists/*; \
+	fp-collect-runtime /rootfs libvips42t64 libheif-plugin-aomdec libheif-plugin-aomenc; \
+	rm -rf /rootfs/usr/local; \
+	conf=/rootfs/usr/local/etc/php/conf.d; \
+	mkdir -p "$conf" /rootfs/usr/src/wordpress/wp-content/plugins; \
+	{ echo 'extension=ffi'; echo 'ffi.enable=true'; } > "$conf/ffi.ini"; \
+	echo 'zend.max_allowed_stack_size=-1' > "$conf/stack-size.ini"; \
+	unzip /tmp/vips-image-editor-ffi.zip -d /rootfs/usr/src/wordpress/wp-content/plugins/; \
+	rm /tmp/vips-image-editor-ffi.zip
+
+FROM base
+
+COPY --from=build /rootfs/ /
