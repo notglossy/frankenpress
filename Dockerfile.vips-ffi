@@ -1,11 +1,14 @@
 # Define build arguments that can be overridden at build time
 ARG WORDPRESS_VERSION=latest
 ARG PHP_VERSION=8.4
+# Only trixie is supported: the libheif AOM plugin packages below don't exist
+# in older Debian releases.
 ARG DEBIAN_VERSION=trixie
+# Base FrankenPress image. Defaults to the published tag; CI overrides it on
+# pull requests to build on top of the base image built from the PR.
+ARG BASE_IMAGE=ghcr.io/notglossy/frankenpress:php-${PHP_VERSION}-${DEBIAN_VERSION}
 
-
-# First stage: builder - used to build FrankenPHP with custom modules
-FROM ghcr.io/notglossy/frankenpress:php-${PHP_VERSION}-${DEBIAN_VERSION}
+FROM ${BASE_IMAGE}
 
 USER root
 

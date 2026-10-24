@@ -30,6 +30,8 @@ docker run -d \
 
 All images are built on Debian 13 (Trixie). Debian Bookworm and 32-bit ARM (arm/v7) images are no longer built.
 
+**Migrating from Bookworm:** the `bookworm`, `php-*-bookworm` and `vips-ffi-bookworm` tags are still published but no longer rebuilt, so they won't get Debian, PHP or WordPress security updates. Switch to the matching `-trixie` tag (e.g. `php-8.4-bookworm` → `php-8.4-trixie`). There is no replacement for arm/v7.
+
 ## Performance & Build Optimization
 
 Standard image arm64 builds run on native GitHub-hosted ARM runners (`ubuntu-24.04-arm`) for maximum performance and speed. This eliminates QEMU emulation overhead, resulting in significantly faster build times.
@@ -53,6 +55,7 @@ Standard image arm64 builds run on native GitHub-hosted ARM runners (`ubuntu-24.
 **Performance & Caching:**
 - OPcache (configured for production)
 - APCu
+- Memcache (PHP 8.4 and earlier)
 - Memcached
 - Redis
 - igbinary

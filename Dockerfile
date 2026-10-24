@@ -85,7 +85,8 @@ ENV FORCE_HTTPS=0 \
 # - zip: Archive handling
 # - imagick: Advanced image processing (alternative to GD)
 # - opcache: Bytecode caching for performance
-# - memcached: Object caching backend
+# - memcache/memcached: Object caching backends (memcache only on PHP < 8.5,
+#   its latest PECL release doesn't compile on 8.5)
 # - apcu: In-memory user cache
 # - redis: Object caching and sessions
 # - igbinary/msgpack: Efficient serialization for caching
@@ -122,6 +123,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         redis \
         igbinary \
         msgpack \
+        $(php -r 'echo PHP_VERSION_ID < 80500 ? "memcache" : "";') \
     # Remove build dependencies to reduce image size
     && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
         libonig-dev \

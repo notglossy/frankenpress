@@ -94,6 +94,15 @@ jobs:
           docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-trixie-amd64 frankenphp version
           docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-trixie-amd64 wp --version
           docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-trixie-amd64 ls -la /usr/src/wordpress | grep wp-config-docker.php
+          # PHP must start cleanly and load every extension (catches broken conf.d loaders)
+          startup=$(docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-trixie-amd64 php -v 2>&1)
+          echo "$startup"
+          if echo "$startup" | grep -Ei 'warning|error'; then echo "PHP printed startup warnings"; exit 1; fi
+          modules=$(docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-trixie-amd64 php -m)
+          echo "$modules" | grep -qx 'Zend OPcache'
+          for ext in bcmath exif gd intl mysqli zip imagick memcached apcu redis igbinary msgpack; do
+            echo "$modules" | grep -qix "$ext" || { echo "Missing extension: $ext"; exit 1; }
+          done
 
   create-manifests:
     if: github.event_name != 'pull_request'
