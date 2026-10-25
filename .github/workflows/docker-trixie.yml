@@ -70,6 +70,19 @@ jobs:
           flavor: |
             latest=false
 
+      # Resolved here rather than in the Dockerfile, so a new WordPress release
+      # changes the build-arg and with it the build cache key.
+      - name: Resolve latest WordPress version
+        id: wordpress
+        run: |
+          version="$(curl -fsSL https://api.wordpress.org/core/version-check/1.7/ | jq -r '.offers[0].version')"
+          if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+            echo "::error::Unexpected WordPress version '${version}'"
+            exit 1
+          fi
+          echo "WordPress ${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
@@ -84,7 +97,10 @@ jobs:
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
             DEBIAN_VERSION=trixie
-          labels: ${{ steps.meta.outputs.labels }}
+            WORDPRESS_VERSION=${{ steps.wordpress.outputs.version }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            com.notglossy.wordpress.version=${{ steps.wordpress.outputs.version }}
           provenance: ${{ github.event_name != 'pull_request' }}
           sbom: ${{ github.event_name != 'pull_request' }}
           load: ${{ github.event_name == 'pull_request' }}
@@ -227,6 +243,15 @@ jobs:
               "$minor" "$version" > "php-${minor}.json"
             echo "PHP ${minor}: ${version}"
           done
+
+          wordpress="$(docker run --rm --pull always --entrypoint php "ghcr.io/${REPOSITORY}:php-8.4-trixie" -r 'include "/usr/src/wordpress/wp-includes/version.php"; echo $wp_version;')"
+          if ! [[ "$wordpress" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+            echo "::error::php-8.4-trixie image reports WordPress version '${wordpress}'"
+            exit 1
+          fi
+          printf '{"schemaVersion":1,"label":"WordPress","message":"%s","color":"21759b","namedLogo":"wordpress","logoColor":"white"}\n' \
+            "$wordpress" > wordpress.json
+          echo "WordPress: ${wordpress}"
 
           git add -A
           if git diff --cached --quiet; then

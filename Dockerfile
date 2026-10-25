@@ -31,16 +31,10 @@ ARG BUILD_IMAGE=${SRC_IMAGE}:php${PHP_VERSION}-${DEBIAN_VERSION}-dev
 ARG RUNTIME_IMAGE=${SRC_IMAGE}:php${PHP_VERSION}-${DEBIAN_VERSION}
 
 # -----------------------------------------------------------------------------
-# Stage 1: WordPress Source Files
-# -----------------------------------------------------------------------------
-# Pull WordPress core files from the official WordPress Docker image
-# This stage is used only to extract files, not run WordPress
-FROM wordpress:$WORDPRESS_VERSION AS wp
-
-# -----------------------------------------------------------------------------
-# Stage 2: Build PHP Extensions and Collect the Runtime Filesystem
+# Stage 1: Build PHP Extensions and Collect the Runtime Filesystem
 # -----------------------------------------------------------------------------
 FROM ${BUILD_IMAGE} AS build
+ARG WORDPRESS_VERSION
 
 # memcache has no PIE package, so it is built from its PECL release.
 ARG MEMCACHE_VERSION=8.2
@@ -146,16 +140,35 @@ RUN curl -fsSLo /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/build
 # -----------------------------------------------------------------------------
 # WordPress Core Files
 # -----------------------------------------------------------------------------
-# Copy WordPress core files from the official WordPress image.
-# This includes:
-# - /usr/src/wordpress: WordPress core files (copied to /var/www/html on start)
-# - docker-entrypoint.sh: WordPress initialization script
+# WordPress comes straight from wordpress.org, verified against the SHA-1
+# wordpress.org publishes for the release. CI resolves the latest version and
+# passes it as WORDPRESS_VERSION, so a new release changes the build cache key;
+# "latest" (the default) resolves it here, for local builds.
 #
-# PHP configuration is deliberately NOT copied: the WordPress image is built
-# against a different PHP version, and its docker-php-ext-*.ini loaders would
-# break extensions here.
-COPY --from=wp /usr/src/wordpress /rootfs/usr/src/wordpress
-COPY --from=wp /usr/local/bin/docker-entrypoint.sh /usr/local/bin/
+# docker-entrypoint.sh (copies WordPress into /var/www/html on first start and
+# generates wp-config.php) and wp-config-docker.php come from docker-library's
+# WordPress image sources, at WORDPRESS_DOCKER_REF.
+ARG WORDPRESS_DOCKER_REF=master
+RUN set -eux; \
+    version="$WORDPRESS_VERSION"; \
+    if [ "$version" = latest ]; then \
+        version="$(curl -fsSL https://api.wordpress.org/core/version-check/1.7/ | jq -r '.offers[0].version')"; \
+    fi; \
+    case "$version" in \
+        '' | *[!0-9.]*) echo >&2 "Unexpected WordPress version '$version'"; exit 1 ;; \
+    esac; \
+    curl -fsSLo /tmp/wordpress.tar.gz "https://wordpress.org/wordpress-${version}.tar.gz"; \
+    sha1="$(curl -fsSL "https://wordpress.org/wordpress-${version}.tar.gz.sha1")"; \
+    echo "${sha1}  /tmp/wordpress.tar.gz" | sha1sum -c -; \
+    mkdir -p /rootfs/usr/src; \
+    tar -xzf /tmp/wordpress.tar.gz -C /rootfs/usr/src; \
+    rm /tmp/wordpress.tar.gz; \
+    grep -q "^\$wp_version = '${version}';" /rootfs/usr/src/wordpress/wp-includes/version.php; \
+    docker_library="https://raw.githubusercontent.com/docker-library/wordpress/${WORDPRESS_DOCKER_REF}"; \
+    curl -fsSLo /rootfs/usr/src/wordpress/wp-config-docker.php "${docker_library}/wp-config-docker.php"; \
+    curl -fsSLo /usr/local/bin/docker-entrypoint.sh "${docker_library}/docker-entrypoint.sh"; \
+    chmod 755 /usr/local/bin/docker-entrypoint.sh; \
+    echo "WordPress ${version}"
 
 # -----------------------------------------------------------------------------
 # WordPress and Entrypoint Customization
@@ -194,7 +207,7 @@ RUN set -eux; \
     install -d -o 65532 -g 65532 /rootfs/var/www/html
 
 # -----------------------------------------------------------------------------
-# Stage 3: Final FrankenPress Image
+# Stage 2: Final FrankenPress Image
 # -----------------------------------------------------------------------------
 FROM ${RUNTIME_IMAGE}
 

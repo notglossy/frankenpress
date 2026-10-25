@@ -1,0 +1,52 @@
+name: Rebuild on new WordPress release
+
+# Checks daily whether wordpress.org has a newer WordPress than the published
+# images contain, and if so starts the image build (the VIPS images follow it
+# through workflow_run). New sites then get the new release within a day;
+# existing sites update through WordPress's own updater either way.
+
+on:
+  schedule:
+    - cron: '30 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start a build if WordPress has a new release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          latest="$(curl -fsSL https://api.wordpress.org/core/version-check/1.7/ | jq -r '.offers[0].version')"
+          if ! [[ "$latest" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+            echo "::error::Unexpected WordPress version '${latest}'"
+            exit 1
+          fi
+
+          # The build labels each image with the WordPress version it contains.
+          published="$(docker buildx imagetools inspect "ghcr.io/${REPOSITORY}:php-8.4-trixie-amd64" \
+            --format '{{ json .Image.Config.Labels }}' | jq -r '."com.notglossy.wordpress.version" // empty')"
+          echo "Latest WordPress: ${latest}; published images: ${published:-unknown}"
+
+          if [ "$published" = "$latest" ]; then
+            echo "Images are up to date"
+            exit 0
+          fi
+
+          running="$(gh run list --repo "$REPOSITORY" --workflow docker-trixie.yml --branch main --limit 20 \
+            --json status --jq '[.[] | select(.status != "completed")] | length')"
+          if [ "$running" -gt 0 ]; then
+            echo "An image build is already queued or running; not starting another"
+            exit 0
+          fi
+
+          gh workflow run docker-trixie.yml --repo "$REPOSITORY" --ref main
+          echo "Started an image build for WordPress ${latest}"
