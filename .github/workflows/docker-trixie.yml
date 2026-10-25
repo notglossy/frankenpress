@@ -190,3 +190,49 @@ jobs:
       - name: Inspect image (GHCR)
         run: |
           docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-trixie
+
+  # Publishes shields.io endpoint badges with the PHP version actually built
+  # into each published image. The JSON files live on the `badges` branch, so
+  # weekly updates don't add commits to main (and, pushed with GITHUB_TOKEN,
+  # don't trigger builds).
+  badges:
+    needs: create-manifests
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Update PHP version badges
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd "$(mktemp -d)"
+          git init -q
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git"
+          if git fetch -q --depth 1 origin badges 2>/dev/null; then
+            git checkout -q -b badges FETCH_HEAD
+          else
+            git checkout -q --orphan badges
+          fi
+
+          for minor in 8.5 8.4 8.3 8.2; do
+            version="$(docker run --rm --pull always --entrypoint php "notglossy/frankenpress:php-${minor}-trixie" -r 'echo PHP_VERSION;')"
+            if ! [[ "$version" =~ ^${minor//./\\.}\.[0-9]+$ ]]; then
+              echo "::error::php-${minor}-trixie image reports PHP version '${version}'"
+              exit 1
+            fi
+            printf '{"schemaVersion":1,"label":"PHP %s","message":"%s","color":"777bb4","namedLogo":"php","logoColor":"white"}\n' \
+              "$minor" "$version" > "php-${minor}.json"
+            echo "PHP ${minor}: ${version}"
+          done
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Badges unchanged"
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "Update PHP version badges"
+          git push -q origin badges
