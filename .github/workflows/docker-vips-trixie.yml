@@ -124,6 +124,35 @@ jobs:
           sbom: ${{ github.event_name != 'pull_request' }}
           load: ${{ github.event_name == 'pull_request' }}
 
+      # Docker Scout applies DHI's VEX statements, so CVEs Docker has marked as not
+      # affecting its patched packages aren't reported. Fork PRs have no Docker Hub
+      # secrets, so they skip the scan.
+      - name: Scan image for vulnerabilities
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: ${{ github.event_name == 'pull_request' && 'local://' || 'registry://' }}notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie
+          only-severities: critical,high
+          summary: true
+          write-comment: false
+          dockerhub-user: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Fail on fixable critical vulnerabilities
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: ${{ github.event_name == 'pull_request' && 'local://' || 'registry://' }}notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie
+          only-severities: critical
+          only-fixed: true
+          exit-code: true
+          summary: false
+          write-comment: false
+          dockerhub-user: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Smoke test
         if: github.event_name == 'pull_request'
         run: |
