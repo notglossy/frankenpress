@@ -30,29 +30,27 @@ concurrency:
 jobs:
   docker:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
+    # Native runners per architecture (no QEMU); create-manifests joins them.
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
     strategy:
       matrix:
-        # Only build PHP 8.4 and 8.5 for PRs to speed up CI, build all versions for main branch
+        # Only build PHP 8.4 and 8.5 on amd64 for PRs to speed up CI; build everything on main
         php-version: ${{ github.event_name == 'pull_request' && fromJSON('[8.4, 8.5]') || fromJSON('[8.2, 8.3, 8.4, 8.5]') }}
+        platform: ${{ github.event_name == 'pull_request' && fromJSON('["linux/amd64"]') || fromJSON('["linux/amd64", "linux/arm64"]') }}
       fail-fast: false
+    env:
+      VIPS_TAG: php-${{ matrix.php-version }}-vips-ffi-trixie-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
     # Local registry used on PRs to hand the freshly built base image to the VIPS build
     services:
       registry:
-        image: registry:2
+        image: ghcr.io/distribution/distribution:3
         ports:
           - 5000:5000
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-        with:
-          driver-opts: network=host
-
+      # Log in before setting up Buildx, so pulling the BuildKit image from
+      # Docker Hub is authenticated on main.
       - name: Login to Docker Hub
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
@@ -67,6 +65,11 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: network=host
 
       # On PRs, build the base image from this PR instead of relying on a published
       # tag (which may be stale, or not exist yet for a newly added PHP version).
@@ -94,27 +97,20 @@ jobs:
             org.opencontainers.image.description=WordPress with VIPS and FFI running on FrankenPHP with Debian Trixie
             org.opencontainers.image.licenses=MIT
 
-      - name: Set up Docker SBOM
-        uses: anchore/sbom-action/download-syft@v0.24.2
-
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
-          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
           context: .
           file: ./Dockerfile.vips-ffi
           tags: |
-            notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie
-            ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie
-            ${{ matrix.php-version == '8.4' && 'notglossy/frankenpress:vips-ffi-trixie' || '' }}
-            ${{ matrix.php-version == '8.4' && 'notglossy/frankenpress:vips-ffi' || '' }}
-            ${{ matrix.php-version == '8.4' && format('ghcr.io/{0}/frankenpress:vips-ffi-trixie', github.repository_owner) || '' }}
-            ${{ matrix.php-version == '8.4' && format('ghcr.io/{0}/frankenpress:vips-ffi', github.repository_owner) || '' }}
+            notglossy/frankenpress:${{ env.VIPS_TAG }}
+            ghcr.io/${{ github.repository_owner }}/frankenpress:${{ env.VIPS_TAG }}
           cache-from: |
-            type=gha,scope=vips-${{ matrix.php-version }}
-            type=registry,ref=notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie
-          cache-to: type=gha,mode=max,scope=vips-${{ matrix.php-version }}
+            type=gha,scope=vips-${{ matrix.platform }}-${{ matrix.php-version }}
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/frankenpress:${{ env.VIPS_TAG }}
+          cache-to: type=gha,mode=max,scope=vips-${{ matrix.platform }}-${{ matrix.php-version }}
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
             DEBIAN_VERSION=trixie
@@ -132,7 +128,7 @@ jobs:
         uses: docker/scout-action@v1
         with:
           command: cves
-          image: ${{ github.event_name == 'pull_request' && 'local://' || 'registry://' }}notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie
+          image: ${{ github.event_name == 'pull_request' && 'local://notglossy' || format('registry://ghcr.io/{0}', github.repository_owner) }}/frankenpress:${{ env.VIPS_TAG }}
           only-severities: critical,high
           summary: true
           write-comment: false
@@ -144,7 +140,7 @@ jobs:
         uses: docker/scout-action@v1
         with:
           command: cves
-          image: ${{ github.event_name == 'pull_request' && 'local://' || 'registry://' }}notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie
+          image: ${{ github.event_name == 'pull_request' && 'local://notglossy' || format('registry://ghcr.io/{0}', github.repository_owner) }}/frankenpress:${{ env.VIPS_TAG }}
           only-severities: critical
           only-fixed: true
           exit-code: true
@@ -156,11 +152,50 @@ jobs:
       - name: Smoke test
         if: github.event_name == 'pull_request'
         run: |
-          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie php -v | grep "PHP ${{ matrix.php-version }}"
-          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie php -m | grep FFI
-          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie frankenphp version
-          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie wp --version
-          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie ls -la /usr/src/wordpress | grep wp-config-docker.php
+          image="notglossy/frankenpress:${VIPS_TAG}"
+          docker run --rm "$image" php -v | grep "PHP ${{ matrix.php-version }}"
+          docker run --rm "$image" php -m | grep FFI
+          docker run --rm "$image" frankenphp version
+          docker run --rm "$image" wp --version
+          docker run --rm "$image" ls -la /usr/src/wordpress | grep wp-config-docker.php
           # libvips is built from source into /usr/local; Debian's libvips (and the OpenEXR it links) must not be present
-          docker run --rm --entrypoint bash notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie -c 'test -e /usr/local/lib/libvips.so.42 && test -L /usr/lib/$(uname -m)-linux-gnu/libvips.so.42 && ! test -e /var/lib/dpkg/status.d/libvips42t64 && ! test -e /var/lib/dpkg/status.d/libopenexr-3-1-30'
-          docker run --rm notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie php -r '$f = FFI::cdef("int vips_init(const char *argv0); const char *vips_version_string(void);", "libvips.so.42"); if ($f->vips_init("php") !== 0) exit(1); echo "libvips ", $f->vips_version_string(), "\n";'
+          docker run --rm --entrypoint bash "$image" -c 'test -e /usr/local/lib/libvips.so.42 && test -L /usr/lib/$(uname -m)-linux-gnu/libvips.so.42 && ! test -e /var/lib/dpkg/status.d/libvips42t64 && ! test -e /var/lib/dpkg/status.d/libopenexr-3-1-30'
+          docker run --rm "$image" php -r '$f = FFI::cdef("int vips_init(const char *argv0); const char *vips_version_string(void);", "libvips.so.42"); if ($f->vips_init("php") !== 0) exit(1); echo "libvips ", $f->vips_version_string(), "\n";'
+
+  # Joins the per-architecture images into the multi-arch tags users pull.
+  create-manifests:
+    if: github.event_name != 'pull_request'
+    needs: docker
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php-version: [8.2, 8.3, 8.4, 8.5]
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Create multi-arch manifests
+        run: |
+          for repo in notglossy/frankenpress "ghcr.io/${{ github.repository_owner }}/frankenpress"; do
+            tags=(-t "${repo}:php-${{ matrix.php-version }}-vips-ffi-trixie")
+            if [ "${{ matrix.php-version }}" = "8.4" ]; then
+              tags+=(-t "${repo}:vips-ffi-trixie" -t "${repo}:vips-ffi")
+            fi
+            docker buildx imagetools create "${tags[@]}" \
+              "${repo}:php-${{ matrix.php-version }}-vips-ffi-trixie-amd64" \
+              "${repo}:php-${{ matrix.php-version }}-vips-ffi-trixie-arm64"
+            docker buildx imagetools inspect "${repo}:php-${{ matrix.php-version }}-vips-ffi-trixie"
+          done
