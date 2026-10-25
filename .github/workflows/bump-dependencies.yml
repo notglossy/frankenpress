@@ -1,0 +1,116 @@
+name: Bump pinned dependencies
+
+# Checks for new releases of the dependencies pinned (version + sha256) in
+# Dockerfile.vips-ffi and opens a PR for each one that has a newer release.
+#
+# Uses the BUMP_PR_TOKEN secret (a fine-grained token with contents and pull
+# request write access to this repository) instead of GITHUB_TOKEN, because
+# PRs opened with GITHUB_TOKEN don't trigger the image build workflows.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: libvips
+            repo: libvips/libvips
+            asset: vips-VERSION.tar.xz
+            version_arg: VIPS_VERSION
+            sha_arg: VIPS_SHA256
+          - name: vips-image-editor-ffi
+            repo: notglossy/vips-image-editor-ffi
+            asset: vips-image-editor-ffi-VERSION.zip
+            version_arg: VIPS_EDITOR_VERSION
+            sha_arg: VIPS_EDITOR_SHA256
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.BUMP_PR_TOKEN }}
+
+      - name: Open a PR if ${{ matrix.name }} has a newer release
+        env:
+          GH_TOKEN: ${{ secrets.BUMP_PR_TOKEN }}
+          NAME: ${{ matrix.name }}
+          REPO: ${{ matrix.repo }}
+          ASSET: ${{ matrix.asset }}
+          VERSION_ARG: ${{ matrix.version_arg }}
+          SHA_ARG: ${{ matrix.sha_arg }}
+          FILE: Dockerfile.vips-ffi
+        run: |
+          set -euo pipefail
+
+          current="$(sed -n "s/^ARG ${VERSION_ARG}=//p" "$FILE")"
+          release="$(gh api "repos/${REPO}/releases/latest")"
+          tag="$(jq -r .tag_name <<<"$release")"
+          latest="${tag#v}"
+
+          # The tag comes from another repository; only accept plain versions.
+          if ! [[ "$latest" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error::Unexpected release tag '${tag}' for ${REPO}"
+            exit 1
+          fi
+          if [ "$latest" = "$current" ] || [ "$(printf '%s\n' "$current" "$latest" | sort -V | tail -n1)" != "$latest" ]; then
+            echo "${NAME} ${current} is up to date (latest ${latest})"
+            exit 0
+          fi
+
+          branch="bump/${NAME}-${latest}"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "Branch ${branch} already exists; not opening another PR"
+            exit 0
+          fi
+
+          # Download the asset and compute its sha256; if GitHub publishes a
+          # digest for it, the two must match.
+          asset="${ASSET//VERSION/$latest}"
+          url="$(jq -r --arg a "$asset" '.assets[] | select(.name == $a) | .browser_download_url' <<<"$release")"
+          digest="$(jq -r --arg a "$asset" '.assets[] | select(.name == $a) | .digest // empty' <<<"$release")"
+          if [ -z "$url" ]; then
+            echo "::error::Release ${tag} of ${REPO} has no asset ${asset}"
+            exit 1
+          fi
+          curl -fsSL -o /tmp/asset "$url"
+          sha256="$(sha256sum /tmp/asset | cut -d' ' -f1)"
+          if [ -n "$digest" ] && [ "$digest" != "sha256:${sha256}" ]; then
+            echo "::error::${asset} sha256 ${sha256} doesn't match GitHub's digest ${digest}"
+            exit 1
+          fi
+
+          sed -i \
+            -e "s/^ARG ${VERSION_ARG}=.*/ARG ${VERSION_ARG}=${latest}/" \
+            -e "s/^ARG ${SHA_ARG}=.*/ARG ${SHA_ARG}=${sha256}/" \
+            "$FILE"
+
+          digest_note=""
+          if [ -n "$digest" ]; then
+            digest_note=", matches the digest GitHub publishes for it"
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
+          git commit -am "Bump ${NAME} to ${latest}"
+          git push origin "$branch"
+
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Bump ${NAME} to ${latest}" \
+            --body "$(printf '%s\n' \
+              "Updates \`${NAME}\` in \`${FILE}\` from ${current} to ${latest}." \
+              "" \
+              "- Release notes: https://github.com/${REPO}/releases/tag/${tag}" \
+              "- \`${SHA_ARG}\`: \`${sha256}\` (computed from the downloaded \`${asset}\`${digest_note})" \
+              "" \
+              "Opened by the \`Bump pinned dependencies\` workflow.")"
