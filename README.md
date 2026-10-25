@@ -1,6 +1,6 @@
 # FrankenPress Docker Image
 
-![PHP 8.5](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnotglossy%2Ffrankenpress%2Fbadges%2Fphp-8.5.json) ![PHP 8.4](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnotglossy%2Ffrankenpress%2Fbadges%2Fphp-8.4.json) ![PHP 8.3](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnotglossy%2Ffrankenpress%2Fbadges%2Fphp-8.3.json) ![PHP 8.2](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnotglossy%2Ffrankenpress%2Fbadges%2Fphp-8.2.json)
+![WordPress](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnotglossy%2Ffrankenpress%2Fbadges%2Fwordpress.json) ![PHP 8.5](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnotglossy%2Ffrankenpress%2Fbadges%2Fphp-8.5.json) ![PHP 8.4](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnotglossy%2Ffrankenpress%2Fbadges%2Fphp-8.4.json) ![PHP 8.3](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnotglossy%2Ffrankenpress%2Fbadges%2Fphp-8.3.json) ![PHP 8.2](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnotglossy%2Ffrankenpress%2Fbadges%2Fphp-8.2.json)
 
 A WordPress image built for simplicity and scale, powered by FrankenPHP and Caddy.
 
@@ -47,7 +47,7 @@ Standard image arm64 builds run on native GitHub-hosted ARM runners (`ubuntu-24.
 
 ### Core Components
 
-- **[WordPress](https://wordpress.org/)** - Latest version from official WordPress Docker images
+- **[WordPress](https://wordpress.org/)** - Latest release, downloaded from wordpress.org and checksum-verified at build time. A daily check rebuilds the images when a new WordPress release comes out (new installs get it within a day; existing sites update through WordPress's own updater). Each image is labelled with its version (`com.notglossy.wordpress.version`)
 - **[FrankenPHP](https://frankenphp.dev/)** - Modern PHP application server (custom builds from [frankenpress-src](https://github.com/notglossy/frankenpress-src))
 - **[Docker Hardened Images](https://www.docker.com/products/hardened-images/)** - Minimal Debian runtime with no package manager, running as a non-root user
 - **[Caddy](https://caddyserver.com/)** - Fast, secure web server with automatic HTTPS
@@ -103,7 +103,7 @@ Imagick supports JPEG, PNG, GIF, WebP, AVIF, HEIC (decoding) and PDF (through Gh
 
 ### Why Not Just Use Standard WordPress Images?
 
-The standard WordPress images are a good starting point and can handle many use cases, but require significant modification to scale. You also don't get FrankenPHP app server. Instead, you need to choose Apache or PHP-FPM. We use the WordPress base image but extend it with FrankenPHP & Caddy.
+The standard WordPress images are a good starting point and can handle many use cases, but require significant modification to scale. You also don't get FrankenPHP app server. Instead, you need to choose Apache or PHP-FPM. We take WordPress itself from wordpress.org, and the entrypoint and `wp-config-docker.php` from the official image's sources, and run it on FrankenPHP & Caddy.
 
 ### Why FrankenPHP?
 
