@@ -36,9 +36,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
       - name: Login to Docker Hub
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
@@ -53,6 +50,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Docker meta
         id: meta
@@ -79,7 +79,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: |
             type=gha,scope=${{ matrix.platform }}-${{ matrix.php-version }}
-            type=registry,ref=notglossy/frankenpress:php-${{ matrix.php-version }}-trixie-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/frankenpress:php-${{ matrix.php-version }}-trixie-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}-${{ matrix.php-version }}
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
@@ -97,7 +97,7 @@ jobs:
         uses: docker/scout-action@v1
         with:
           command: cves
-          image: ${{ github.event_name == 'pull_request' && 'local://' || 'registry://' }}notglossy/frankenpress:php-${{ matrix.php-version }}-trixie-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          image: ${{ github.event_name == 'pull_request' && 'local://notglossy' || format('registry://ghcr.io/{0}', github.repository_owner) }}/frankenpress:php-${{ matrix.php-version }}-trixie-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           only-severities: critical,high
           summary: true
           write-comment: false
@@ -109,7 +109,7 @@ jobs:
         uses: docker/scout-action@v1
         with:
           command: cves
-          image: ${{ github.event_name == 'pull_request' && 'local://' || 'registry://' }}notglossy/frankenpress:php-${{ matrix.php-version }}-trixie-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          image: ${{ github.event_name == 'pull_request' && 'local://notglossy' || format('registry://ghcr.io/{0}', github.repository_owner) }}/frankenpress:php-${{ matrix.php-version }}-trixie-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           only-severities: critical
           only-fixed: true
           exit-code: true
@@ -149,9 +149,6 @@ jobs:
       matrix:
         php-version: [8.2, 8.3, 8.4, 8.5]
     steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
       - name: Login to Docker Hub
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
@@ -166,6 +163,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Create multi-arch manifest (Docker Hub)
         run: |
@@ -218,7 +218,7 @@ jobs:
           fi
 
           for minor in 8.5 8.4 8.3 8.2; do
-            version="$(docker run --rm --pull always --entrypoint php "notglossy/frankenpress:php-${minor}-trixie" -r 'echo PHP_VERSION;')"
+            version="$(docker run --rm --pull always --entrypoint php "ghcr.io/${REPOSITORY}:php-${minor}-trixie" -r 'echo PHP_VERSION;')"
             if ! [[ "$version" =~ ^${minor//./\\.}\.[0-9]+$ ]]; then
               echo "::error::php-${minor}-trixie image reports PHP version '${version}'"
               exit 1
