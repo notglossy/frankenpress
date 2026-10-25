@@ -135,6 +135,7 @@ jobs:
           image: ${{ github.event_name == 'pull_request' && 'local://' || 'registry://' }}notglossy/frankenpress:php-${{ matrix.php-version }}-vips-ffi-trixie
           only-severities: critical,high
           summary: true
+          write-comment: false
           dockerhub-user: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
 
@@ -148,6 +149,7 @@ jobs:
           only-fixed: true
           exit-code: true
           summary: false
+          write-comment: false
           dockerhub-user: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
 
