@@ -6,37 +6,112 @@ ARG DEBIAN_VERSION=trixie
 # Base FrankenPress image. Defaults to the published tag; CI overrides it on
 # pull requests to build on top of the base image built from the PR.
 ARG BASE_IMAGE=ghcr.io/notglossy/frankenpress:php-${PHP_VERSION}-${DEBIAN_VERSION}
-# frankenpress-src build environment, used to collect libvips and its libraries.
+# frankenpress-src build environment, used to build libvips and collect its libraries.
 ARG BUILD_IMAGE=ghcr.io/notglossy/frankenpress-src:php${PHP_VERSION}-${DEBIAN_VERSION}-dev
+# libvips release built from source, and the sha256 of its tarball (from the
+# GitHub release's asset digest). Bump both together.
+ARG VIPS_VERSION=8.18.7
+ARG VIPS_SHA256=5baaead3b0bb20ffdb9e9ff09aa9fda08620923df77b63b436654cb5e0b3bf94
 
 FROM ${BASE_IMAGE} AS base
 
 FROM ${BUILD_IMAGE} AS build
+ARG VIPS_VERSION
+ARG VIPS_SHA256
 
 # Let fp-collect-runtime skip every package the FrankenPress image already has.
 COPY --from=base /var/lib/dpkg/status.d /usr/local/share/frankenpress/base-status.d
 
 ADD https://github.com/notglossy/vips-image-editor-ffi/releases/download/v3.1.0/vips-image-editor-ffi-3.1.0.zip /tmp/vips-image-editor-ffi.zip
 
-# libvips and the libheif AOM plugins (AVIF decoding/encoding) plus the libraries
-# they need. /usr/local comes from the base image, so only the ini files are kept.
-# FFI is a bundled shared extension in the base image; enable it here.
+# libvips is built from source with only the formats the vips-image-editor-ffi
+# plugin uses: JPEG, PNG, GIF, WebP, HEIF/HEIC/AVIF and JPEG XL. Debian's
+# libvips42t64 links OpenEXR, FITS, MATLAB/HDF5, Poppler (and through it
+# GnuPG), OpenSlide, librsvg and ImageMagick, none of which WordPress needs.
+# Every optional feature is disabled unless listed here.
 RUN set -eux; \
 	apt-get update; \
 	apt-get install -y --no-install-recommends \
-		libvips42t64 \
+		meson \
+		ninja-build \
+		libglib2.0-dev \
+		libexpat1-dev \
+		libjpeg62-turbo-dev \
+		libspng-dev \
+		libcgif-dev \
+		libimagequant-dev \
+		libwebp-dev \
+		libheif-dev \
 		libheif-plugin-aomdec \
 		libheif-plugin-aomenc \
+		libjxl-dev \
+		libexif-dev \
+		liblcms2-dev \
+		libhwy-dev \
+		zlib1g-dev \
 	; \
 	rm -rf /var/lib/apt/lists/*; \
-	fp-collect-runtime /rootfs libvips42t64 libheif-plugin-aomdec libheif-plugin-aomenc; \
-	rm -rf /rootfs/usr/local; \
+	curl -fsSLo /tmp/vips.tar.xz "https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.xz"; \
+	echo "${VIPS_SHA256}  /tmp/vips.tar.xz" | sha256sum -c -; \
+	mkdir -p /usr/src/vips; \
+	tar -xJf /tmp/vips.tar.xz -C /usr/src/vips --strip-components=1; \
+	cd /usr/src/vips; \
+	meson setup build \
+		--prefix=/usr/local \
+		--libdir=lib \
+		--buildtype=release \
+		--auto-features=disabled \
+		-Ddeprecated=false \
+		-Dexamples=false \
+		-Dcplusplus=false \
+		-Dmodules=disabled \
+		-Dintrospection=disabled \
+		-Danalyze=false \
+		-Dppm=false \
+		-Dradiance=false \
+		-Dnsgif=true \
+		-Dcgif=enabled \
+		-Dexif=enabled \
+		-Dheif=enabled \
+		-Dhighway=enabled \
+		-Dimagequant=enabled \
+		-Djpeg=enabled \
+		-Djpeg-xl=enabled \
+		-Dlcms=enabled \
+		-Dspng=enabled \
+		-Dwebp=enabled \
+		-Dzlib=enabled \
+	; \
+	meson compile -C build; \
+	meson install -C build; \
+	cd /; rm -rf /usr/src/vips /tmp/vips.tar.xz; \
+	rm -f /usr/local/bin/vips*; \
+	strip --strip-unneeded /usr/local/lib/libvips.so.*.*; \
+	ldconfig
+
+# Collect libvips (/usr/local) and the packages it needs, plus the libheif AOM
+# plugins, which libheif loads at runtime. libvips lives in /usr/local/lib, so a
+# symlink in the system library directory lets php-vips find it by name.
+# FFI is a bundled shared extension in the base image; enable it here.
+RUN set -eux; \
+	fp-collect-runtime /rootfs libheif-plugin-aomdec libheif-plugin-aomenc; \
+	multiarch="$(dpkg-architecture --query DEB_HOST_MULTIARCH)"; \
+	mkdir -p "/rootfs/usr/lib/$multiarch"; \
+	ln -s /usr/local/lib/libvips.so.42 "/rootfs/usr/lib/$multiarch/libvips.so.42"; \
 	conf=/rootfs/usr/local/etc/php/conf.d; \
 	mkdir -p "$conf" /rootfs/usr/src/wordpress/wp-content/plugins; \
 	{ echo 'extension=ffi'; echo 'ffi.enable=true'; } > "$conf/ffi.ini"; \
 	echo 'zend.max_allowed_stack_size=-1' > "$conf/stack-size.ini"; \
 	unzip /tmp/vips-image-editor-ffi.zip -d /rootfs/usr/src/wordpress/wp-content/plugins/; \
-	rm /tmp/vips-image-editor-ffi.zip
+	rm /tmp/vips-image-editor-ffi.zip; \
+	# Encode every format the plugin writes, through the plugin's own php-vips,
+	# the way the plugin does it (AVIF via heifsave with AV1 compression).
+	php -d extension=ffi -d ffi.enable=true -r ' \
+		require "/rootfs/usr/src/wordpress/wp-content/plugins/vips-image-editor-ffi/vendor/autoload.php"; \
+		$im = Jcupitt\Vips\Image::black(64, 64, ["bands" => 3]); \
+		foreach ([".jpg", ".png", ".gif", ".webp", ".jxl"] as $s) { $im->writeToBuffer($s); echo "$s ok\n"; } \
+		$im->heifsave_buffer(["compression" => "av1"]); echo "avif ok\n"; \
+		echo "libvips ", Jcupitt\Vips\Config::version(), "\n";'
 
 FROM base
 
