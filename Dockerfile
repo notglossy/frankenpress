@@ -175,27 +175,19 @@ RUN sed -i \
 # Runtime Filesystem
 # -----------------------------------------------------------------------------
 # fp-collect-runtime copies /usr/local (PHP, extensions, config, WP-CLI,
-# entrypoint) and every Debian package whose libraries it needs into /rootfs.
-# Extra runtime packages, copied whole:
-# - ghostscript, libgs*-common: PDF thumbnails through Imagick
-# - libmagickcore-7.q16-10, imagemagick-7-common, libmagickcore-7-arch-config:
-#   ImageMagick coder modules (JPEG, PNG, WebP, HEIC, PDF, ...) and config,
-#   which are loaded at runtime and so aren't found through ldd
-# - libheif plugins: AVIF/HEIC decoding (dav1d, libde265), AVIF encoding (aom)
+# entrypoint), every Debian package whose libraries it needs, and those
+# packages' dependencies into /rootfs. That covers ImageMagick's coder modules
+# and config (imagemagick-7-common) and the libheif decoder plugins.
+# Extra runtime packages, which nothing depends on:
+# - ghostscript: PDF thumbnails through Imagick
+# - libheif-plugin-aomenc: AVIF encoding
 # - mawk: docker-entrypoint.sh uses awk to generate wp-config.php salts
 #
 # /var/www/html is created owned by the nonroot user (UID 65532).
 RUN set -eux; \
     fp-collect-runtime /rootfs \
         ghostscript \
-        libgs10-common \
-        libgs-common \
-        libmagickcore-7.q16-10 \
-        imagemagick-7-common \
-        libmagickcore-7-arch-config \
         libheif-plugin-aomenc \
-        libheif-plugin-dav1d \
-        libheif-plugin-libde265 \
         mawk \
     ; \
     ln -s mawk /rootfs/usr/bin/awk; \
