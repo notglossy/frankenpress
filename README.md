@@ -75,7 +75,7 @@ Imagick supports JPEG, PNG, GIF, WebP, AVIF, HEIC (decoding) and PDF (through Gh
 
 **VIPS Images Only:**
 - FFI (Foreign Function Interface)
-- libvips (high-performance image processing)
+- libvips (high-performance image processing), built from source with only the formats WordPress uses: JPEG, PNG, GIF, WebP, HEIF/HEIC/AVIF and JPEG XL. Other formats (OpenEXR, PDF, SVG, TIFF, scientific formats) are left out to keep the image small and its vulnerability surface low; set `VIPS_VERSION` and `VIPS_SHA256` to build a different release
 - [vips-image-editor-ffi](https://github.com/notglossy/vips-image-editor-ffi) WordPress plugin
 
 ### Environment Variables
